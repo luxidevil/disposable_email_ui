@@ -7,7 +7,8 @@
   "scripts": {
     "start:api": "node api/index.js",
     "start:frontend": "cd frontend && npm run dev",
-    "start": "concurrently \"npm:start:*\""
+    "start": "concurrently \"npm:start:*\"",
+    "build": "cd frontend && npm run build"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^4.7.0"

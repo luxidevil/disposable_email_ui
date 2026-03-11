@@ -4,13 +4,21 @@ import { useServices } from "@/context/ServicesContext";
 
 const Cards = () => {
   const navigate = useNavigate();
-  const { services } = useServices();
+  const { services, loading } = useServices();
 
   const activeServices = services.filter((s) => s.active);
 
   const handleCardClick = (name: string, color: string) => {
     navigate(`/${encodeURIComponent(name)}/verification`, { state: { bgColor: color } });
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen w-full bg-gray-50 flex items-center justify-center">
+        <div className="text-gray-400 text-lg">Loading services...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen w-full bg-gray-50 flex flex-col items-center">
@@ -20,7 +28,7 @@ const Cards = () => {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 w-full max-w-4xl px-6">
         {activeServices.map((card) => (
           <div
-            key={card.id}
+            key={card._id}
             className={`cursor-pointer rounded-xl shadow-lg flex flex-col items-center justify-between text-white text-xl font-semibold transition-transform hover:scale-105 ${card.color}`}
             style={{ minHeight: 200, padding: 0 }}
             onClick={() => handleCardClick(card.name, card.color)}

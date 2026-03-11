@@ -36,7 +36,7 @@ const Admin = () => {
   const [password, setPassword] = useState("");
   const [loginError, setLoginError] = useState("");
 
-  const { services, addService, toggleService, removeService } = useServices();
+  const { services, loading, addService, toggleService, removeService } = useServices();
 
   const [newName, setNewName] = useState("");
   const [newColor, setNewColor] = useState("bg-red-700");
@@ -45,6 +45,7 @@ const Admin = () => {
   const [imgMode, setImgMode] = useState<"upload" | "url">("upload");
   const [addError, setAddError] = useState("");
   const [addSuccess, setAddSuccess] = useState(false);
+  const [saving, setSaving] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleLogin = (e: React.FormEvent) => {
@@ -88,20 +89,28 @@ const Admin = () => {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  const handleAdd = (e: React.FormEvent) => {
+  const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newName.trim()) {
-      setAddError("Service name is required.");
-      return;
-    }
-    if (!newImg.trim()) {
-      setAddError("Please upload an image or enter an image URL.");
-      return;
-    }
-    addService({ name: newName.trim(), color: newColor, img: newImg.trim() });
+    if (!newName.trim()) { setAddError("Service name is required."); return; }
+    if (!newImg.trim()) { setAddError("Please upload an image or enter an image URL."); return; }
+    setSaving("add");
+    await addService({ name: newName.trim(), color: newColor, img: newImg.trim() });
     resetForm();
+    setSaving(null);
     setAddSuccess(true);
     setTimeout(() => setAddSuccess(false), 2500);
+  };
+
+  const handleToggle = async (id: string, active: boolean) => {
+    setSaving(id);
+    await toggleService(id, active);
+    setSaving(null);
+  };
+
+  const handleRemove = async (id: string) => {
+    setSaving(id + "_del");
+    await removeService(id);
+    setSaving(null);
   };
 
   if (!loggedIn) {
@@ -120,32 +129,18 @@ const Admin = () => {
           <form onSubmit={handleLogin} className="flex flex-col gap-4">
             <div>
               <label className="text-gray-300 text-sm font-medium mb-1 block">Username</label>
-              <input
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
+              <input type="text" value={username} onChange={(e) => setUsername(e.target.value)}
                 className="w-full bg-gray-700 text-white rounded-lg px-4 py-2.5 outline-none focus:ring-2 focus:ring-red-500 placeholder-gray-500"
-                placeholder="Enter username"
-                autoComplete="off"
-              />
+                placeholder="Enter username" autoComplete="off" />
             </div>
             <div>
               <label className="text-gray-300 text-sm font-medium mb-1 block">Password</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
                 className="w-full bg-gray-700 text-white rounded-lg px-4 py-2.5 outline-none focus:ring-2 focus:ring-red-500 placeholder-gray-500"
-                placeholder="Enter password"
-              />
+                placeholder="Enter password" />
             </div>
-            {loginError && (
-              <p className="text-red-400 text-sm text-center">{loginError}</p>
-            )}
-            <button
-              type="submit"
-              className="bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded-lg transition-colors mt-1"
-            >
+            {loginError && <p className="text-red-400 text-sm text-center">{loginError}</p>}
+            <button type="submit" className="bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded-lg transition-colors mt-1">
               Login
             </button>
           </form>
@@ -162,36 +157,24 @@ const Admin = () => {
             <h1 className="text-3xl font-bold">Admin Dashboard</h1>
             <p className="text-gray-400 text-sm mt-1">Manage services shown on the main page</p>
           </div>
-          <button
-            onClick={() => setLoggedIn(false)}
-            className="text-sm text-gray-400 hover:text-red-400 transition-colors"
-          >
+          <button onClick={() => setLoggedIn(false)} className="text-sm text-gray-400 hover:text-red-400 transition-colors">
             Logout
           </button>
         </div>
 
         <div className="bg-gray-800 rounded-2xl p-6 mb-6">
           <h2 className="text-xl font-semibold mb-4">Current Services</h2>
-          {services.length === 0 && (
-            <p className="text-gray-400 text-sm">No services yet. Add one below.</p>
-          )}
+          {loading && <p className="text-gray-400 text-sm">Loading...</p>}
+          {!loading && services.length === 0 && <p className="text-gray-400 text-sm">No services yet. Add one below.</p>}
           <div className="flex flex-col gap-3">
             {services.map((service) => (
-              <div
-                key={service.id}
-                className="flex items-center gap-4 bg-gray-700 rounded-xl px-4 py-3"
-              >
-                <div
-                  className="w-4 h-4 rounded-full flex-shrink-0"
-                  style={{ backgroundColor: COLOR_PREVIEW[service.color] || "#888" }}
-                />
+              <div key={service._id} className="flex items-center gap-4 bg-gray-700 rounded-xl px-4 py-3">
+                <div className="w-4 h-4 rounded-full flex-shrink-0"
+                  style={{ backgroundColor: COLOR_PREVIEW[service.color] || "#888" }} />
                 <div className="flex items-center gap-3 flex-1 min-w-0">
-                  <img
-                    src={service.img}
-                    alt={service.name}
+                  <img src={service.img} alt={service.name}
                     className="w-8 h-8 object-contain rounded bg-white p-0.5 flex-shrink-0"
-                    onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-                  />
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
                   <span className="font-medium truncate">{service.name}</span>
                 </div>
                 <div className="flex items-center gap-3 flex-shrink-0">
@@ -199,20 +182,20 @@ const Admin = () => {
                     {service.active ? "Active" : "Off"}
                   </span>
                   <button
-                    onClick={() => toggleService(service.id)}
-                    className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors ${
-                      service.active
-                        ? "bg-yellow-600 hover:bg-yellow-700 text-white"
-                        : "bg-green-700 hover:bg-green-600 text-white"
+                    onClick={() => handleToggle(service._id, service.active)}
+                    disabled={saving === service._id}
+                    className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors disabled:opacity-50 ${
+                      service.active ? "bg-yellow-600 hover:bg-yellow-700 text-white" : "bg-green-700 hover:bg-green-600 text-white"
                     }`}
                   >
-                    {service.active ? "Shut Down" : "Activate"}
+                    {saving === service._id ? "..." : service.active ? "Shut Down" : "Activate"}
                   </button>
                   <button
-                    onClick={() => removeService(service.id)}
-                    className="text-xs px-3 py-1.5 rounded-lg bg-red-700 hover:bg-red-800 text-white font-medium transition-colors"
+                    onClick={() => handleRemove(service._id)}
+                    disabled={saving === service._id + "_del"}
+                    className="text-xs px-3 py-1.5 rounded-lg bg-red-700 hover:bg-red-800 text-white font-medium transition-colors disabled:opacity-50"
                   >
-                    Remove
+                    {saving === service._id + "_del" ? "..." : "Remove"}
                   </button>
                 </div>
               </div>
@@ -225,30 +208,20 @@ const Admin = () => {
           <form onSubmit={handleAdd} className="flex flex-col gap-5">
             <div>
               <label className="text-gray-300 text-sm font-medium mb-1 block">Service Name</label>
-              <input
-                type="text"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
+              <input type="text" value={newName} onChange={(e) => setNewName(e.target.value)}
                 className="w-full bg-gray-700 text-white rounded-lg px-4 py-2.5 outline-none focus:ring-2 focus:ring-red-500 placeholder-gray-500"
-                placeholder="e.g. Spotify"
-              />
+                placeholder="e.g. Spotify" />
             </div>
 
             <div>
               <label className="text-gray-300 text-sm font-medium mb-2 block">Service Logo</label>
               <div className="flex gap-2 mb-3">
-                <button
-                  type="button"
-                  onClick={() => { setImgMode("upload"); resetForm(); }}
-                  className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${imgMode === "upload" ? "bg-red-600 text-white" : "bg-gray-700 text-gray-300 hover:bg-gray-600"}`}
-                >
+                <button type="button" onClick={() => { setImgMode("upload"); resetForm(); }}
+                  className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${imgMode === "upload" ? "bg-red-600 text-white" : "bg-gray-700 text-gray-300 hover:bg-gray-600"}`}>
                   Upload Image
                 </button>
-                <button
-                  type="button"
-                  onClick={() => { setImgMode("url"); resetForm(); }}
-                  className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${imgMode === "url" ? "bg-red-600 text-white" : "bg-gray-700 text-gray-300 hover:bg-gray-600"}`}
-                >
+                <button type="button" onClick={() => { setImgMode("url"); resetForm(); }}
+                  className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${imgMode === "url" ? "bg-red-600 text-white" : "bg-gray-700 text-gray-300 hover:bg-gray-600"}`}>
                   Use URL
                 </button>
               </div>
@@ -273,26 +246,14 @@ const Admin = () => {
                       <span className="text-xs">PNG, JPG, SVG supported</span>
                     </div>
                   )}
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={handleFileChange}
-                  />
+                  <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
                 </div>
               ) : (
                 <div className="flex gap-3 items-center">
-                  <input
-                    type="text"
-                    value={newImg}
-                    onChange={handleUrlChange}
+                  <input type="text" value={newImg} onChange={handleUrlChange}
                     className="flex-1 bg-gray-700 text-white rounded-lg px-4 py-2.5 outline-none focus:ring-2 focus:ring-red-500 placeholder-gray-500"
-                    placeholder="https://example.com/logo.png"
-                  />
-                  {imgPreview && (
-                    <img src={imgPreview} alt="preview" className="h-10 w-10 object-contain rounded bg-white p-1 flex-shrink-0" />
-                  )}
+                    placeholder="https://example.com/logo.png" />
+                  {imgPreview && <img src={imgPreview} alt="preview" className="h-10 w-10 object-contain rounded bg-white p-1 flex-shrink-0" />}
                 </div>
               )}
             </div>
@@ -301,20 +262,11 @@ const Admin = () => {
               <label className="text-gray-300 text-sm font-medium mb-2 block">Card Color</label>
               <div className="flex flex-wrap gap-2">
                 {COLOR_OPTIONS.map((opt) => (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onClick={() => setNewColor(opt.value)}
+                  <button key={opt.value} type="button" onClick={() => setNewColor(opt.value)}
                     className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm border-2 transition-all ${
-                      newColor === opt.value
-                        ? "border-white bg-gray-600"
-                        : "border-transparent bg-gray-700 hover:bg-gray-600"
-                    }`}
-                  >
-                    <span
-                      className="w-3 h-3 rounded-full inline-block"
-                      style={{ backgroundColor: COLOR_PREVIEW[opt.value] }}
-                    />
+                      newColor === opt.value ? "border-white bg-gray-600" : "border-transparent bg-gray-700 hover:bg-gray-600"
+                    }`}>
+                    <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: COLOR_PREVIEW[opt.value] }} />
                     {opt.label}
                   </button>
                 ))}
@@ -324,11 +276,9 @@ const Admin = () => {
             {addError && <p className="text-red-400 text-sm">{addError}</p>}
             {addSuccess && <p className="text-green-400 text-sm">Service added successfully!</p>}
 
-            <button
-              type="submit"
-              className="bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded-lg transition-colors"
-            >
-              Add Service
+            <button type="submit" disabled={saving === "add"}
+              className="bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded-lg transition-colors disabled:opacity-50">
+              {saving === "add" ? "Adding..." : "Add Service"}
             </button>
           </form>
         </div>

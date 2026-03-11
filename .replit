@@ -37,4 +37,4 @@ externalPort = 80
 deploymentTarget = "autoscale"
 build = ["npm", "run", "build"]
 publicDir = "frontend/dist"
-run = ["npx", "serve", "-s", "frontend/dist", "-l", "3000"]
+run = ["npx", "serve", "-s", "frontend/dist", "-l", "5000"]

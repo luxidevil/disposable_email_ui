@@ -1,34 +1,14 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
-
-const cardData = [
-  {
-    name: "NF",
-    color: "bg-red-700",
-    img: "/images/netmirror.jpg"
-  },
-  {
-    name: "Crunchy",
-    color: "bg-orange-600",
-    img: "/images/crunchyroll.png"
-  },
-  {
-    name: "YT Premium",
-    color: "bg-red-600",
-    img: "/images/youtube.png"
-  },
-  {
-    name: "Prime",
-    color: "bg-sky-500",
-    img: "/images/prime2.png"
-  },
-];
+import { useServices } from "@/context/ServicesContext";
 
 const Cards = () => {
   const navigate = useNavigate();
+  const { services } = useServices();
 
+  const activeServices = services.filter((s) => s.active);
 
-  const handleCardClick = (name,color: string) => {
+  const handleCardClick = (name: string, color: string) => {
     navigate(`/${encodeURIComponent(name)}/verification`, { state: { bgColor: color } });
   };
 
@@ -38,12 +18,12 @@ const Cards = () => {
         <h1 className="text-4xl font-extrabold tracking-tight mb-10 text-gray-900">Choose a Service</h1>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 w-full max-w-4xl px-6">
-        {cardData.map((card) => (
+        {activeServices.map((card) => (
           <div
-            key={card.name}
+            key={card.id}
             className={`cursor-pointer rounded-xl shadow-lg flex flex-col items-center justify-between text-white text-xl font-semibold transition-transform hover:scale-105 ${card.color}`}
             style={{ minHeight: 200, padding: 0 }}
-            onClick={() => handleCardClick(card.name,card.color)}
+            onClick={() => handleCardClick(card.name, card.color)}
           >
             <div className="w-full flex justify-center items-center bg-white rounded-t-xl" style={{ height: 110 }}>
               <img src={card.img} alt={card.name} className="h-16 w-16 object-contain" />
@@ -53,12 +33,14 @@ const Cards = () => {
             </div>
           </div>
         ))}
+        {activeServices.length === 0 && (
+          <div className="col-span-2 text-center text-gray-400 text-lg py-20">
+            No active services available.
+          </div>
+        )}
       </div>
-      {/* Footer removed per request (no WhatsApp/Telegram buttons) */}
     </div>
   );
 };
 
 export default Cards;
-
-

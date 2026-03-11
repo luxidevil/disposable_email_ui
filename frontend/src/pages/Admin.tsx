@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { useServices } from "@/context/ServicesContext";
 
 const ADMIN_USER = "devil";
@@ -41,8 +41,11 @@ const Admin = () => {
   const [newName, setNewName] = useState("");
   const [newColor, setNewColor] = useState("bg-red-700");
   const [newImg, setNewImg] = useState("");
+  const [imgPreview, setImgPreview] = useState("");
+  const [imgMode, setImgMode] = useState<"upload" | "url">("upload");
   const [addError, setAddError] = useState("");
   const [addSuccess, setAddSuccess] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,6 +57,37 @@ const Admin = () => {
     }
   };
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setAddError("Please upload a valid image file.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const result = ev.target?.result as string;
+      setNewImg(result);
+      setImgPreview(result);
+      setAddError("");
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setNewImg(e.target.value);
+    setImgPreview(e.target.value);
+  };
+
+  const resetForm = () => {
+    setNewName("");
+    setNewImg("");
+    setImgPreview("");
+    setNewColor("bg-red-700");
+    setAddError("");
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
   const handleAdd = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newName.trim()) {
@@ -61,16 +95,13 @@ const Admin = () => {
       return;
     }
     if (!newImg.trim()) {
-      setAddError("Image URL is required.");
+      setAddError("Please upload an image or enter an image URL.");
       return;
     }
     addService({ name: newName.trim(), color: newColor, img: newImg.trim() });
-    setNewName("");
-    setNewImg("");
-    setNewColor("bg-red-700");
-    setAddError("");
+    resetForm();
     setAddSuccess(true);
-    setTimeout(() => setAddSuccess(false), 2000);
+    setTimeout(() => setAddSuccess(false), 2500);
   };
 
   if (!loggedIn) {
@@ -191,7 +222,7 @@ const Admin = () => {
 
         <div className="bg-gray-800 rounded-2xl p-6">
           <h2 className="text-xl font-semibold mb-4">Add New Service</h2>
-          <form onSubmit={handleAdd} className="flex flex-col gap-4">
+          <form onSubmit={handleAdd} className="flex flex-col gap-5">
             <div>
               <label className="text-gray-300 text-sm font-medium mb-1 block">Service Name</label>
               <input
@@ -202,18 +233,72 @@ const Admin = () => {
                 placeholder="e.g. Spotify"
               />
             </div>
+
             <div>
-              <label className="text-gray-300 text-sm font-medium mb-1 block">Image URL</label>
-              <input
-                type="text"
-                value={newImg}
-                onChange={(e) => setNewImg(e.target.value)}
-                className="w-full bg-gray-700 text-white rounded-lg px-4 py-2.5 outline-none focus:ring-2 focus:ring-red-500 placeholder-gray-500"
-                placeholder="https://example.com/logo.png"
-              />
+              <label className="text-gray-300 text-sm font-medium mb-2 block">Service Logo</label>
+              <div className="flex gap-2 mb-3">
+                <button
+                  type="button"
+                  onClick={() => { setImgMode("upload"); resetForm(); }}
+                  className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${imgMode === "upload" ? "bg-red-600 text-white" : "bg-gray-700 text-gray-300 hover:bg-gray-600"}`}
+                >
+                  Upload Image
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setImgMode("url"); resetForm(); }}
+                  className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${imgMode === "url" ? "bg-red-600 text-white" : "bg-gray-700 text-gray-300 hover:bg-gray-600"}`}
+                >
+                  Use URL
+                </button>
+              </div>
+
+              {imgMode === "upload" ? (
+                <div
+                  className="border-2 border-dashed border-gray-600 rounded-xl p-6 flex flex-col items-center justify-center cursor-pointer hover:border-red-500 transition-colors"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  {imgPreview ? (
+                    <div className="flex flex-col items-center gap-2">
+                      <img src={imgPreview} alt="preview" className="h-16 w-16 object-contain rounded bg-white p-1" />
+                      <span className="text-green-400 text-sm">Image ready</span>
+                      <span className="text-gray-400 text-xs">Click to change</span>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center gap-2 text-gray-400">
+                      <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                      <span className="text-sm font-medium">Click to upload logo</span>
+                      <span className="text-xs">PNG, JPG, SVG supported</span>
+                    </div>
+                  )}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleFileChange}
+                  />
+                </div>
+              ) : (
+                <div className="flex gap-3 items-center">
+                  <input
+                    type="text"
+                    value={newImg}
+                    onChange={handleUrlChange}
+                    className="flex-1 bg-gray-700 text-white rounded-lg px-4 py-2.5 outline-none focus:ring-2 focus:ring-red-500 placeholder-gray-500"
+                    placeholder="https://example.com/logo.png"
+                  />
+                  {imgPreview && (
+                    <img src={imgPreview} alt="preview" className="h-10 w-10 object-contain rounded bg-white p-1 flex-shrink-0" />
+                  )}
+                </div>
+              )}
             </div>
+
             <div>
-              <label className="text-gray-300 text-sm font-medium mb-1 block">Card Color</label>
+              <label className="text-gray-300 text-sm font-medium mb-2 block">Card Color</label>
               <div className="flex flex-wrap gap-2">
                 {COLOR_OPTIONS.map((opt) => (
                   <button
@@ -235,8 +320,10 @@ const Admin = () => {
                 ))}
               </div>
             </div>
+
             {addError && <p className="text-red-400 text-sm">{addError}</p>}
             {addSuccess && <p className="text-green-400 text-sm">Service added successfully!</p>}
+
             <button
               type="submit"
               className="bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded-lg transition-colors"

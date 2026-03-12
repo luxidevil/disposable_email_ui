@@ -11,9 +11,15 @@ app.use(cors());
 app.use(express.json({ limit: "10mb" }));
 
 // --- MongoDB Connection ---
+// Strip any accidental MONGODB_URI= prefix or surrounding quotes from the secret
+const rawMongoUri = (process.env.MONGODB_URI || "")
+  .replace(/^MONGODB_URI\s*=\s*/, "")
+  .replace(/^["']|["']$/g, "")
+  .trim();
+
 const connectMongo = async () => {
   try {
-    await mongoose.connect(process.env.MONGODB_URI);
+    await mongoose.connect(rawMongoUri);
     console.log("Connected to MongoDB");
   } catch (err) {
     console.error("MongoDB connection error:", err.message);

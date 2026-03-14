@@ -20,19 +20,30 @@ const ServicesContext = createContext<ServicesContextType | null>(null);
 
 const API_BASE = "/api/services";
 
+const DEFAULT_SERVICES: Service[] = [
+  { _id: "default-nf", name: "NF", color: "bg-red-700", img: "/images/netmirror.jpg", active: true },
+  { _id: "default-crunchy", name: "Crunchy", color: "bg-orange-600", img: "/images/crunchyroll.png", active: true },
+  { _id: "default-yt", name: "YT Premium", color: "bg-red-600", img: "/images/youtube.png", active: true },
+  { _id: "default-prime", name: "Prime", color: "bg-sky-500", img: "/images/prime2.png", active: true },
+];
+
 export const ServicesProvider = ({ children }: { children: React.ReactNode }) => {
-  const [services, setServices] = useState<Service[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [services, setServices] = useState<Service[]>(DEFAULT_SERVICES);
+  const [loading, setLoading] = useState(false);
 
   const fetchServices = async () => {
     try {
-      const res = await fetch(API_BASE);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+      const res = await fetch(API_BASE, { signal: controller.signal });
+      clearTimeout(timeout);
+      if (!res.ok) throw new Error("API error");
       const data = await res.json();
-      setServices(data);
+      if (Array.isArray(data) && data.length > 0) {
+        setServices(data);
+      }
     } catch (err) {
-      console.error("Failed to fetch services:", err);
-    } finally {
-      setLoading(false);
+      console.error("Failed to fetch services, using defaults:", err);
     }
   };
 

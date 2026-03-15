@@ -59,6 +59,8 @@ mongoose.connection.once("open", async () => {
 // --- Services API ---
 app.get("/api/services", async (req, res) => {
   try {
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+    res.set("Pragma", "no-cache");
     const services = await Service.find().sort({ order: 1, createdAt: 1 });
     res.json(services);
   } catch (err) {

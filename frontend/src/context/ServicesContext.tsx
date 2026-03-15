@@ -49,6 +49,8 @@ export const ServicesProvider = ({ children }: { children: React.ReactNode }) =>
 
   useEffect(() => {
     fetchServices();
+    const interval = setInterval(fetchServices, 30000);
+    return () => clearInterval(interval);
   }, []);
 
   const addService = async (service: Omit<Service, "_id" | "active">) => {

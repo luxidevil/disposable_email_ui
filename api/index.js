@@ -27,6 +27,15 @@ const connectMongo = async () => {
 };
 connectMongo();
 
+const waitForMongo = (timeoutMs = 20000) => {
+  return new Promise((resolve, reject) => {
+    if (mongoose.connection.readyState === 1) return resolve();
+    const timer = setTimeout(() => reject(new Error("MongoDB not ready")), timeoutMs);
+    mongoose.connection.once("open", () => { clearTimeout(timer); resolve(); });
+    mongoose.connection.once("error", (err) => { clearTimeout(timer); reject(err); });
+  });
+};
+
 // --- Service Schema ---
 const serviceSchema = new mongoose.Schema(
   {
@@ -61,10 +70,11 @@ app.get("/api/services", async (req, res) => {
   try {
     res.set("Cache-Control", "no-store, no-cache, must-revalidate");
     res.set("Pragma", "no-cache");
+    await waitForMongo(20000);
     const services = await Service.find().sort({ order: 1, createdAt: 1 });
     res.json(services);
   } catch (err) {
-    res.status(500).json({ error: "Failed to fetch services" });
+    res.status(503).json({ error: "Database not ready, please retry" });
   }
 });
 

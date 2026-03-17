@@ -31,25 +31,31 @@ export const ServicesProvider = ({ children }: { children: React.ReactNode }) =>
   const [services, setServices] = useState<Service[]>(DEFAULT_SERVICES);
   const [loading, setLoading] = useState(false);
 
-  const fetchServices = async () => {
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 5000);
-      const res = await fetch(API_BASE, { signal: controller.signal });
-      clearTimeout(timeout);
-      if (!res.ok) throw new Error("API error");
-      const data = await res.json();
-      if (Array.isArray(data) && data.length > 0) {
-        setServices(data);
+  const fetchServices = async (retries = 3, delayMs = 3000) => {
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 25000);
+        const res = await fetch(API_BASE, { signal: controller.signal });
+        clearTimeout(timeout);
+        if (!res.ok) throw new Error(`API error ${res.status}`);
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          setServices(data);
+          return;
+        }
+      } catch (err) {
+        console.warn(`Fetch attempt ${attempt} failed:`, err);
+        if (attempt < retries) {
+          await new Promise((r) => setTimeout(r, delayMs));
+        }
       }
-    } catch (err) {
-      console.error("Failed to fetch services, using defaults:", err);
     }
   };
 
   useEffect(() => {
     fetchServices();
-    const interval = setInterval(fetchServices, 30000);
+    const interval = setInterval(() => fetchServices(1), 30000);
     return () => clearInterval(interval);
   }, []);
 

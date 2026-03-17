@@ -253,7 +253,7 @@ app.get("/api", rateLimit, async (req, res) => {
 app.get("/api/yt-token/:token", async (req, res) => {
   try {
     const { token } = req.params;
-    if (!/^[a-f0-9]{16}$/.test(token)) {
+    if (!token || token.length > 100) {
       return res.status(400).json({ error: "Invalid token" });
     }
     const response = await fetch(`http://34.180.38.207/cookies/token/${token}`);

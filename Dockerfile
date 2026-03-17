@@ -1,0 +1,20 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+COPY api/package*.json ./api/
+RUN cd api && npm install --omit=dev
+
+COPY frontend/package*.json ./frontend/
+RUN cd frontend && npm install
+
+COPY . .
+
+RUN cd frontend && npm run build
+
+EXPOSE 8080
+
+ENV PORT=8080
+ENV NODE_ENV=production
+
+CMD ["node", "api/index.js"]

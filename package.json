@@ -1,16 +1,16 @@
 {
   "name": "email-viewer-monorepo",
   "version": "1.0.0",
-  "devDependencies": {
-    "concurrently": "^9.2.0"
+  "engines": {
+    "node": ">=18"
   },
   "scripts": {
-    "start:api": "node api/index.js",
-    "start:frontend": "cd frontend && npm run dev",
-    "start": "concurrently \"npm:start:*\"",
-    "build": "cd frontend && npm run build"
+    "install:all": "cd api && npm install && cd ../frontend && npm install",
+    "build": "cd frontend && npm run build",
+    "start": "node api/index.js",
+    "dev": "concurrently \"PORT=3001 node api/index.js\" \"cd frontend && npm run dev\""
   },
-  "dependencies": {
-    "@vitejs/plugin-react": "^4.7.0"
+  "devDependencies": {
+    "concurrently": "^9.2.0"
   }
 }

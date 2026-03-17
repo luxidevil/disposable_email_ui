@@ -1,0 +1,11 @@
+node_modules
+api/node_modules
+frontend/node_modules
+frontend/dist
+.git
+.env
+*.log
+attached_assets
+.local
+.replit
+.cache

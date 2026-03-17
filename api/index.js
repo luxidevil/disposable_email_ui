@@ -249,6 +249,31 @@ app.get("/api", rateLimit, async (req, res) => {
   }
 });
 
+// --- YouTube Premium Cookie Token Proxy ---
+app.get("/api/yt-token/:token", async (req, res) => {
+  try {
+    const { token } = req.params;
+    if (!/^[a-f0-9]{16}$/.test(token)) {
+      return res.status(400).json({ error: "Invalid token" });
+    }
+    const response = await fetch(`http://34.180.38.207/cookies/token/${token}`);
+    if (!response.ok) {
+      return res.status(response.status).json({ error: "Failed to fetch token data" });
+    }
+    const contentType = response.headers.get("content-type");
+    if (contentType && contentType.includes("application/json")) {
+      const data = await response.json();
+      return res.json(data);
+    }
+    const text = await response.text();
+    res.set("Content-Type", contentType || "text/plain");
+    res.send(text);
+  } catch (error) {
+    console.error("Token proxy error:", error);
+    res.status(500).json({ error: "Failed to fetch token data" });
+  }
+});
+
 // --- Serve Frontend Static Files (Production) ---
 const frontendDist = path.join(__dirname, "../frontend/dist");
 app.use(express.static(frontendDist));

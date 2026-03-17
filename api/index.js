@@ -7,7 +7,27 @@ const cors = require("cors");
 const mongoose = require("mongoose");
 
 const app = express();
-app.use(cors());
+
+const allowedOrigins = [
+  /\.replit\.dev$/,
+  /\.repl\.co$/,
+  /localhost/,
+  /127\.0\.0\.1/,
+];
+if (process.env.ALLOWED_ORIGIN) {
+  allowedOrigins.push(new RegExp(process.env.ALLOWED_ORIGIN.replace(/\./g, "\\.").replace(/\*/g, ".*")));
+}
+
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.some((r) => r.test(origin))) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  credentials: true,
+}));
 app.use(express.json({ limit: "10mb" }));
 
 // --- MongoDB Connection ---
@@ -152,9 +172,36 @@ const oauth2Client = new google.auth.OAuth2(
 oauth2Client.setCredentials({ refresh_token: process.env.GOOGLE_REFRESH_TOKEN });
 const gmail = google.gmail({ version: "v1", auth: oauth2Client });
 
-app.get("/api", async (req, res) => {
-  const targetEmail = req.query.to;
+// --- Simple in-memory rate limiter ---
+const rateLimitMap = new Map();
+const RATE_LIMIT = 30;
+const RATE_WINDOW = 60 * 1000;
+
+const rateLimit = (req, res, next) => {
+  const ip = req.ip || req.connection.remoteAddress || "unknown";
+  const now = Date.now();
+  const entry = rateLimitMap.get(ip) || { count: 0, start: now };
+  if (now - entry.start > RATE_WINDOW) {
+    entry.count = 0;
+    entry.start = now;
+  }
+  entry.count++;
+  rateLimitMap.set(ip, entry);
+  if (entry.count > RATE_LIMIT) {
+    return res.status(429).json({ error: "Too many requests. Try again later." });
+  }
+  next();
+};
+
+const EMAIL_REGEX = /^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/;
+const BLOCKED_CHARS = /[*\s\(\)\{\}\[\]\\\/\|<>!#$%^&=]/;
+
+app.get("/api", rateLimit, async (req, res) => {
+  const targetEmail = (req.query.to || "").trim();
   if (!targetEmail) return res.status(400).json({ error: "Target email is required" });
+  if (!EMAIL_REGEX.test(targetEmail) || BLOCKED_CHARS.test(targetEmail)) {
+    return res.status(400).json({ error: "Invalid email address" });
+  }
   try {
     const searchResponse = await gmail.users.messages.list({
       userId: "me",

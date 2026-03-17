@@ -55,8 +55,35 @@ export const ServicesProvider = ({ children }: { children: React.ReactNode }) =>
 
   useEffect(() => {
     fetchServices();
-    const interval = setInterval(() => fetchServices(1), 30000);
-    return () => clearInterval(interval);
+
+    let es: EventSource | null = null;
+    let pollInterval: ReturnType<typeof setInterval> | null = null;
+
+    const connectSSE = () => {
+      es = new EventSource("/api/services/events");
+
+      es.onmessage = (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (Array.isArray(data) && data.length > 0) setServices(data);
+        } catch {}
+      };
+
+      es.onerror = () => {
+        es?.close();
+        es = null;
+        if (!pollInterval) {
+          pollInterval = setInterval(() => fetchServices(1), 10000);
+        }
+      };
+    };
+
+    connectSSE();
+
+    return () => {
+      es?.close();
+      if (pollInterval) clearInterval(pollInterval);
+    };
   }, []);
 
   const addService = async (service: Omit<Service, "_id" | "active">) => {

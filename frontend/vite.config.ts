@@ -14,7 +14,16 @@ export default defineConfig({
     port: 5000,
     allowedHosts: true,
     proxy: {
+      "/api/services/events": {
+        target: "http://localhost:3001",
+        changeOrigin: true,
+        ws: false,
+      },
       "/api/services": {
+        target: "http://localhost:3001",
+        changeOrigin: true,
+      },
+      "/api": {
         target: "http://localhost:3001",
         changeOrigin: true,
       },

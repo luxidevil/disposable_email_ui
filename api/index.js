@@ -65,7 +65,39 @@ mongoose.connection.once("open", async () => {
   }
 });
 
+// --- Real-time SSE clients ---
+const sseClients = new Set();
+
+const broadcastServices = async () => {
+  if (sseClients.size === 0) return;
+  try {
+    const services = await Service.find().sort({ order: 1, createdAt: 1 });
+    const payload = `data: ${JSON.stringify(services)}\n\n`;
+    sseClients.forEach((client) => client.write(payload));
+  } catch (err) {
+    console.error("SSE broadcast error:", err.message);
+  }
+};
+
 // --- Services API ---
+app.get("/api/services/events", (req, res) => {
+  res.set({
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    "Connection": "keep-alive",
+    "Access-Control-Allow-Origin": "*",
+  });
+  res.flushHeaders();
+  sseClients.add(res);
+
+  waitForMongo(20000)
+    .then(() => Service.find().sort({ order: 1, createdAt: 1 }))
+    .then((services) => res.write(`data: ${JSON.stringify(services)}\n\n`))
+    .catch(() => {});
+
+  req.on("close", () => sseClients.delete(res));
+});
+
 app.get("/api/services", async (req, res) => {
   try {
     res.set("Cache-Control", "no-store, no-cache, must-revalidate");
@@ -85,6 +117,7 @@ app.post("/api/services", async (req, res) => {
     const service = new Service({ name, color, img, active: true, order: count });
     await service.save();
     res.json(service);
+    broadcastServices();
   } catch (err) {
     res.status(500).json({ error: "Failed to add service" });
   }
@@ -95,6 +128,7 @@ app.patch("/api/services/:id", async (req, res) => {
     const service = await Service.findByIdAndUpdate(req.params.id, req.body, { new: true });
     if (!service) return res.status(404).json({ error: "Service not found" });
     res.json(service);
+    broadcastServices();
   } catch (err) {
     res.status(500).json({ error: "Failed to update service" });
   }
@@ -104,6 +138,7 @@ app.delete("/api/services/:id", async (req, res) => {
   try {
     await Service.findByIdAndDelete(req.params.id);
     res.json({ success: true });
+    broadcastServices();
   } catch (err) {
     res.status(500).json({ error: "Failed to delete service" });
   }

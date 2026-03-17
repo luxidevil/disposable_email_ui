@@ -78,7 +78,7 @@ const YTPremium = () => {
         <div className="max-w-4xl mx-auto px-4 pt-16 pb-12 text-center relative">
           <div className="inline-flex items-center gap-2 bg-red-600/10 border border-red-600/30 rounded-full px-4 py-1.5 mb-6">
             <Shield className="h-4 w-4 text-red-500" />
-            <span className="text-red-400 text-sm font-medium">Authorized Partner</span>
+            <span className="text-red-400 text-sm font-medium">Official YouTube Premium Partner</span>
           </div>
           <h1 className="text-5xl md:text-6xl font-black text-white mb-4 leading-tight">
             YouTube Premium
@@ -86,9 +86,10 @@ const YTPremium = () => {
           <p className="text-xl text-gray-400 mb-2">1 Year Subscription</p>
           <div className="flex items-center justify-center gap-2 mt-4">
             <span className="text-gray-500 line-through text-2xl">$139.99</span>
-            <span className="text-4xl font-bold text-white">$19.99</span>
-            <span className="bg-green-500/20 text-green-400 text-sm font-bold px-2 py-1 rounded">86% OFF</span>
+            <span className="text-4xl font-bold text-white">$0</span>
+            <span className="bg-green-500/20 text-green-400 text-sm font-bold px-2 py-1 rounded">100% OFF</span>
           </div>
+          <p className="text-gray-500 text-sm mt-3">Exclusive partnership — free activation for our members & bulk sellers</p>
         </div>
       </div>
 
@@ -195,7 +196,7 @@ const YTPremium = () => {
 
         <div className="mt-8 text-center">
           <p className="text-gray-600 text-xs">
-            Authorized reseller partner. YouTube and YouTube Premium are trademarks of Google LLC.
+            Official YouTube Premium distribution partner. YouTube and YouTube Premium are trademarks of Google LLC. Bulk licensing available.
           </p>
         </div>
       </div>

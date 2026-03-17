@@ -1,12 +1,13 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Play, Loader2, CheckCircle, XCircle, Download } from "lucide-react";
+import { ArrowLeft, Play, Loader2, CheckCircle, XCircle, ExternalLink, Copy, Check } from "lucide-react";
 
 const YTPremium = () => {
   const navigate = useNavigate();
   const [token, setToken] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ success: boolean; data: any } | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -41,16 +42,19 @@ const YTPremium = () => {
     }
   };
 
-  const handleDownload = () => {
-    if (!result || !result.success) return;
-    const content = typeof result.data === "string" ? result.data : JSON.stringify(result.data, null, 2);
-    const blob = new Blob([content], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `yt-premium-${token.trim().slice(0, 8)}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
+  const getLink = () => {
+    if (!result || !result.success) return null;
+    if (typeof result.data === "object" && result.data.Link) return result.data.Link;
+    if (typeof result.data === "string" && result.data.startsWith("http")) return result.data;
+    return null;
+  };
+
+  const handleCopy = () => {
+    const link = getLink();
+    if (!link) return;
+    navigator.clipboard.writeText(link);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   return (
@@ -105,22 +109,44 @@ const YTPremium = () => {
           <div className={`mt-6 rounded-xl p-5 border ${result.success ? "bg-gray-900/80 border-green-700/50" : "bg-red-950/50 border-red-700/50"}`}>
             {result.success ? (
               <div>
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="h-5 w-5 text-green-500" />
-                    <span className="text-green-400 font-medium">Success</span>
-                  </div>
-                  <button
-                    onClick={handleDownload}
-                    className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition"
-                  >
-                    <Download className="h-4 w-4" />
-                    Download
-                  </button>
+                <div className="flex items-center gap-2 mb-4">
+                  <CheckCircle className="h-5 w-5 text-green-500" />
+                  <span className="text-green-400 font-medium">Your access link is ready</span>
                 </div>
-                <pre className="bg-gray-950 rounded-lg p-4 text-gray-300 text-sm overflow-x-auto max-h-96 overflow-y-auto font-mono whitespace-pre-wrap break-all">
-                  {typeof result.data === "string" ? result.data : JSON.stringify(result.data, null, 2)}
-                </pre>
+
+                {getLink() ? (
+                  <div className="space-y-4">
+                    <a
+                      href={getLink()!}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-center gap-3 w-full bg-red-600 hover:bg-red-700 text-white py-4 rounded-xl text-lg font-semibold transition"
+                    >
+                      <ExternalLink className="h-5 w-5" />
+                      Open YouTube Premium
+                    </a>
+                    <button
+                      onClick={handleCopy}
+                      className="flex items-center justify-center gap-2 w-full bg-gray-800 hover:bg-gray-700 text-gray-300 py-3 rounded-xl text-sm font-medium transition border border-gray-700"
+                    >
+                      {copied ? (
+                        <>
+                          <Check className="h-4 w-4 text-green-400" />
+                          <span className="text-green-400">Copied!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="h-4 w-4" />
+                          Copy Link
+                        </>
+                      )}
+                    </button>
+                  </div>
+                ) : (
+                  <pre className="bg-gray-950 rounded-lg p-4 text-gray-300 text-sm overflow-x-auto max-h-96 overflow-y-auto font-mono whitespace-pre-wrap break-all">
+                    {typeof result.data === "string" ? result.data : JSON.stringify(result.data, null, 2)}
+                  </pre>
+                )}
               </div>
             ) : (
               <div className="flex items-center gap-2">

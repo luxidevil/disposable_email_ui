@@ -17,40 +17,8 @@ const DeviceVerification = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (
-      !email.trim() ||
-      !(
-        email.includes("@luxidevilott.com") ||
-        email.includes("@devilott.store") ||
-        email.includes("@devilott.site") ||
-        email.includes("@devilott.art") ||
-        email.includes("@devilott.online") ||
-        email.includes("@devilott.live") ||
-        email.includes("@voucherskingdom.autos") ||
-        email.includes("@voucherskingdom.bar") ||
-        email.includes("@voucherskingdom.boats") ||
-        email.includes("@voucherskingdom.casa") ||
-        email.includes("@voucherskingdom.cyou") ||
-        email.includes("@voucherskingdom.live") ||
-        email.includes("@voucherskingdom.lol") ||
-        email.includes("@voucherskingdom.monster") ||
-        email.includes("@voucherskingdom.online") ||
-        email.includes("@voucherskingdom.rest") ||
-        email.includes("@voucherskingdom.shop") ||
-        email.includes("@voucherskingdom.site") ||
-        email.includes("@voucherskingdom.space") ||
-        email.includes("@voucherskingdom.store") ||
-        email.includes("@voucherskingdom.xyz") ||
-        email.includes("@vouchersskingdom.online") ||
-        email.includes("@vouchersskingdom.site") ||
-        email.includes("@vouchersskingdom.space") ||
-        email.includes("@vouchersskingdom.store") ||
-        email.includes("@vouchersskingdom.xyz") 
-      )
-    ) {
-      setError(
-        "Please enter a valid email address from the luxidevilott.com domain."
-      );
+    if (!email.trim() || !email.includes("@") || !email.includes(".")) {
+      setError("Please enter a valid email address.");
       return;
     }
     setError("");

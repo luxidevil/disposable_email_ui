@@ -124,8 +124,24 @@ const EmailDashboard = () => {
           </div>
         </div>
 
-        {isLoading && <p>Loading emails...</p>}
+        {isLoading && (
+          <div className="flex items-center justify-center py-12 text-muted-foreground">
+            <RefreshCw className="h-5 w-5 animate-spin mr-2" />
+            Loading emails...
+          </div>
+        )}
+
         {error && <p className="text-destructive">Error: {error}</p>}
+
+        {!isLoading && !error && emails.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <div className="text-5xl mb-4">📭</div>
+            <h3 className="text-xl font-semibold mb-2">No emails found</h3>
+            <p className="text-muted-foreground max-w-sm">
+              No emails have arrived for <span className="font-medium">{emailAddress}</span> yet. Check back later.
+            </p>
+          </div>
+        )}
 
         <div className="space-y-2">
           {emails.map((email) => (

@@ -10,6 +10,7 @@ const app = express();
 
 const allowedOrigins = [
   /\.replit\.dev$/,
+  /\.replit\.app$/,
   /\.repl\.co$/,
   /localhost/,
   /127\.0\.0\.1/,

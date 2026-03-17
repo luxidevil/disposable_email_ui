@@ -28,10 +28,10 @@ const DEFAULT_SERVICES: Service[] = [
 ];
 
 export const ServicesProvider = ({ children }: { children: React.ReactNode }) => {
-  const [services, setServices] = useState<Service[]>(DEFAULT_SERVICES);
-  const [loading, setLoading] = useState(false);
+  const [services, setServices] = useState<Service[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const fetchServices = async (retries = 3, delayMs = 3000) => {
+  const fetchServices = async (retries = 3, delayMs = 3000): Promise<boolean> => {
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
         const controller = new AbortController();
@@ -42,7 +42,7 @@ export const ServicesProvider = ({ children }: { children: React.ReactNode }) =>
         const data = await res.json();
         if (Array.isArray(data) && data.length > 0) {
           setServices(data);
-          return;
+          return true;
         }
       } catch (err) {
         console.warn(`Fetch attempt ${attempt} failed:`, err);
@@ -51,34 +51,43 @@ export const ServicesProvider = ({ children }: { children: React.ReactNode }) =>
         }
       }
     }
+    return false;
   };
 
   useEffect(() => {
-    fetchServices();
-
     let es: EventSource | null = null;
     let pollInterval: ReturnType<typeof setInterval> | null = null;
 
-    const connectSSE = () => {
-      es = new EventSource("/api/services/events");
+    const init = async () => {
+      const success = await fetchServices();
+      if (!success) {
+        setServices(DEFAULT_SERVICES);
+      }
+      setLoading(false);
 
-      es.onmessage = (e) => {
-        try {
-          const data = JSON.parse(e.data);
-          if (Array.isArray(data) && data.length > 0) setServices(data);
-        } catch {}
+      const connectSSE = () => {
+        es = new EventSource("/api/services/events");
+
+        es.onmessage = (e) => {
+          try {
+            const data = JSON.parse(e.data);
+            if (Array.isArray(data) && data.length > 0) setServices(data);
+          } catch {}
+        };
+
+        es.onerror = () => {
+          es?.close();
+          es = null;
+          if (!pollInterval) {
+            pollInterval = setInterval(() => fetchServices(1), 10000);
+          }
+        };
       };
 
-      es.onerror = () => {
-        es?.close();
-        es = null;
-        if (!pollInterval) {
-          pollInterval = setInterval(() => fetchServices(1), 10000);
-        }
-      };
+      connectSSE();
     };
 
-    connectSSE();
+    init();
 
     return () => {
       es?.close();

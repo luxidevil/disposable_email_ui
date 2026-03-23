@@ -10,6 +10,7 @@ import NotFound from "./pages/NotFound";
 import Cards from "./pages/Cards";
 import Search from "./pages/Search";
 import Admin from "./pages/Admin";
+import GiftScanner from "./pages/GiftScanner";
 
 const queryClient = new QueryClient();
 
@@ -26,6 +27,7 @@ const App = () => (
             <Route path="/dashboard/:emailAddress" element={<EmailDashboard />} />
             <Route path="/search" element={<Search />} />
             <Route path="/admin" element={<Admin />} />
+            <Route path="/giftscanner" element={<GiftScanner />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

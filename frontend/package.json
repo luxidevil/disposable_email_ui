@@ -46,6 +46,7 @@
     "cmdk": "^1.0.0",
     "date-fns": "^3.6.0",
     "dompurify": "^3.2.6",
+    "framer-motion": "^12.38.0",
     "embla-carousel-react": "^8.3.0",
     "gapi-script": "^1.2.0",
     "html-react-parser": "^5.2.6",
@@ -64,6 +65,7 @@
     "tailwind-merge": "^2.5.2",
     "tailwindcss-animate": "^1.0.7",
     "vaul": "^0.9.3",
+    "xlsx": "^0.18.5",
     "zod": "^3.23.8"
   },
   "devDependencies": {

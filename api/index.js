@@ -32,6 +32,8 @@ app.use(cors({
 }));
 app.use(express.json({ limit: "10mb" }));
 
+app.get("/api/healthz", (req, res) => res.json({ status: "ok" }));
+
 // --- MongoDB Connection ---
 // Strip any accidental MONGODB_URI= prefix or surrounding quotes from the secret
 const rawMongoUri = (process.env.MONGODB_URI || "")
@@ -246,6 +248,205 @@ app.get("/api", rateLimit, async (req, res) => {
   } catch (error) {
     console.error("Error fetching from Gmail API:", error);
     res.status(500).json({ error: "Failed to fetch emails from Gmail." });
+  }
+});
+
+// --- Gift Card Scanner API ---
+const cheerio = require("cheerio");
+const SUDO_PASSWORD = process.env.SUDO_PASSWORD || "admin123";
+
+app.post("/api/verify-password", (req, res) => {
+  const { sudoPassword } = req.body;
+  if (!sudoPassword || sudoPassword !== SUDO_PASSWORD) {
+    return res.status(401).json({ error: "Invalid password" });
+  }
+  res.json({ valid: true });
+});
+
+function getEmailBodyHtml(payload) {
+  if (!payload) return "";
+  const getPartBody = (part) => {
+    if (part.mimeType === "text/html" && part.body && part.body.data) {
+      return Buffer.from(part.body.data, "base64").toString("utf8");
+    }
+    if (part.parts) {
+      for (const subPart of part.parts) {
+        const result = getPartBody(subPart);
+        if (result) return result;
+      }
+    }
+    return "";
+  };
+  if (payload.body && payload.body.data && payload.mimeType === "text/html") {
+    return Buffer.from(payload.body.data, "base64").toString("utf8");
+  }
+  if (payload.parts) {
+    for (const part of payload.parts) {
+      const body = getPartBody(part);
+      if (body) return body;
+    }
+  }
+  if (payload.body && payload.body.data) {
+    return Buffer.from(payload.body.data, "base64").toString("utf8");
+  }
+  return "";
+}
+
+function findAttachments(payload) {
+  const attachments = [];
+  const walk = (part) => {
+    if (part.filename && part.body && part.body.attachmentId) {
+      attachments.push({
+        filename: part.filename,
+        mimeType: part.mimeType || "application/octet-stream",
+        attachmentId: part.body.attachmentId,
+        sizeBytes: part.body.size || 0,
+      });
+    }
+    if (part.parts) {
+      for (const sub of part.parts) walk(sub);
+    }
+  };
+  if (payload) walk(payload);
+  return attachments;
+}
+
+function parseGiftCardFromHtml(html) {
+  const $ = cheerio.load(html);
+  const extractTableValue = (label) => {
+    let found = "";
+    $("td, th").each((_, el) => {
+      const text = $(el).text().trim().replace(/\s+/g, " ");
+      const normalLabel = label.toLowerCase().trim();
+      if (text.toLowerCase() === normalLabel) {
+        const $row = $(el).closest("tr");
+        const cells = $row.find("td, th");
+        const elIndex = cells.index(el);
+        if (elIndex >= 0 && elIndex < cells.length - 1) {
+          const val = $(cells[elIndex + 1]).text().trim();
+          if (val) {
+            found = val;
+            return false;
+          }
+        }
+      }
+    });
+    return found;
+  };
+  const brand = extractTableValue("Brand");
+  const value = extractTableValue("E-gift card value") || extractTableValue("Gift card value") || extractTableValue("Value");
+  const code = extractTableValue("Code");
+  const validity = extractTableValue("Validity");
+  if (!brand && !code && !value) return null;
+  return { brand, value, code, validity };
+}
+
+function toISTString(epochMs) {
+  const date = new Date(epochMs);
+  return date.toLocaleString("en-IN", {
+    timeZone: "Asia/Kolkata",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
+app.post("/api/gift-scan", async (req, res) => {
+  const { sudoPassword, senderEmail, startTimeIST } = req.body;
+  if (!sudoPassword || sudoPassword !== SUDO_PASSWORD) {
+    return res.status(401).json({ error: "Invalid sudo password" });
+  }
+  if (!senderEmail || !startTimeIST) {
+    return res.status(400).json({ error: "Missing senderEmail or startTimeIST" });
+  }
+
+  const startDate = new Date(startTimeIST);
+  if (isNaN(startDate.getTime())) {
+    return res.status(400).json({ error: "Invalid startTimeIST format" });
+  }
+
+  const afterEpochSeconds = Math.floor(startDate.getTime() / 1000);
+  const query = `from:${senderEmail} after:${afterEpochSeconds}`;
+  console.log("[gift-scan] Query:", query);
+
+  try {
+    let allMessages = [];
+    let pageToken = undefined;
+    do {
+      const listResponse = await gmail.users.messages.list({
+        userId: "me",
+        q: query,
+        maxResults: 200,
+        pageToken,
+      });
+      const messages = listResponse.data.messages || [];
+      allMessages = allMessages.concat(messages);
+      pageToken = listResponse.data.nextPageToken;
+    } while (pageToken);
+
+    console.log("[gift-scan] Found", allMessages.length, "messages");
+    if (allMessages.length === 0) {
+      return res.json({ totalFound: 0, byValue: {} });
+    }
+
+    const batchSize = 20;
+    const byValue = {};
+    let totalFound = 0;
+
+    for (let i = 0; i < allMessages.length; i += batchSize) {
+      const batch = allMessages.slice(i, i + batchSize);
+      const emailPromises = batch.map((msg) =>
+        gmail.users.messages.get({ userId: "me", id: msg.id, format: "full" })
+      );
+      const emailResponses = await Promise.all(emailPromises);
+
+      for (const response of emailResponses) {
+        const detail = response.data;
+        const internalDate = parseInt(detail.internalDate || "0", 10);
+        const receivedAt = toISTString(internalDate);
+        const html = getEmailBodyHtml(detail.payload);
+        const parsed = parseGiftCardFromHtml(html);
+        if (!parsed || !parsed.code) continue;
+
+        const { brand, value, code, validity } = parsed;
+        const attachmentInfos = findAttachments(detail.payload);
+        const attachments = [];
+
+        for (const att of attachmentInfos) {
+          try {
+            const attResponse = await gmail.users.messages.attachments.get({
+              userId: "me",
+              messageId: detail.id,
+              id: att.attachmentId,
+            });
+            const rawData = attResponse.data.data || "";
+            const standardBase64 = rawData.replace(/-/g, "+").replace(/_/g, "/");
+            attachments.push({
+              filename: att.filename,
+              mimeType: att.mimeType,
+              base64Data: standardBase64,
+              sizeBytes: att.sizeBytes,
+            });
+          } catch (attErr) {
+            console.warn("[gift-scan] Failed to fetch attachment:", att.filename);
+          }
+        }
+
+        const sheetKey = value || "Unknown";
+        if (!byValue[sheetKey]) byValue[sheetKey] = [];
+        byValue[sheetKey].push({ brand, value, code, validity, receivedAt, attachments });
+        totalFound++;
+      }
+    }
+
+    console.log("[gift-scan] Total found:", totalFound);
+    res.json({ totalFound, byValue });
+  } catch (err) {
+    console.error("[gift-scan] Error:", err.message);
+    res.status(500).json({ error: err.message || "Failed to scan Gmail" });
   }
 });
 

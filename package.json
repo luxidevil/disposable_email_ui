@@ -12,5 +12,8 @@
   },
   "devDependencies": {
     "concurrently": "^9.2.0"
+  },
+  "dependencies": {
+    "@replit/connectors-sdk": "^0.3.0"
   }
 }

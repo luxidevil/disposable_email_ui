@@ -453,6 +453,7 @@ app.post("/api/gift-scan", async (req, res) => {
 // --- Razorpay Refund Scanner ---
 function parseRazorpayRefundHtml(html, toEmail) {
   const $ = cheerio.load(html);
+  const bodyText = $.text().replace(/\s+/g, " ");
 
   const getText = (label) => {
     let found = "";

@@ -882,7 +882,7 @@ function ScannerView({ sudoPassword, onLogout }: { sudoPassword: string; onLogou
         <motion.div
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
-          className="bg-gray-900/50 border border-gray-700/50 rounded-2xl p-6 shadow-xl shadow-black/20 sticky top-8"
+          className="bg-gray-900/50 border border-gray-700/50 rounded-2xl p-6 shadow-xl shadow-black/20 sticky top-8 max-h-[calc(100vh-4rem)] overflow-y-auto"
         >
           <h2 className="text-lg font-semibold mb-6 flex items-center text-white">
             <Search className="w-5 h-5 mr-2 text-emerald-400" />Scan Parameters

@@ -450,6 +450,366 @@ app.post("/api/gift-scan", async (req, res) => {
   }
 });
 
+// --- Razorpay Refund Scanner ---
+function parseRazorpayRefundHtml(html, toEmail) {
+  const $ = cheerio.load(html);
+
+  const getText = (label) => {
+    let found = "";
+    $("td, th, p, span, div").each((_, el) => {
+      const text = $(el).text().trim().replace(/\s+/g, " ");
+      if (text.toLowerCase() === label.toLowerCase()) {
+        const $row = $(el).closest("tr");
+        if ($row.length) {
+          const cells = $row.find("td");
+          const idx = cells.index(el);
+          if (idx >= 0 && idx < cells.length - 1) {
+            const val = $(cells[idx + 1]).text().trim().replace(/\s+/g, " ");
+            if (val) { found = val; return false; }
+          }
+        }
+        const $next = $(el).next();
+        if ($next.length) {
+          const val = $next.text().trim().replace(/\s+/g, " ");
+          if (val) { found = val; return false; }
+        }
+      }
+    });
+    return found;
+  };
+
+  // Extract RRN from prominent heading (large number in email)
+  let rrn = "";
+  $("td, div, p, span").each((_, el) => {
+    const text = $(el).text().trim().replace(/\s+/g, "");
+    if (/^\d{10,15}$/.test(text)) {
+      rrn = text;
+      return false;
+    }
+  });
+
+  // Also try to find RRN from "RRN for Refund ID" line
+  if (!rrn) {
+    $("*").each((_, el) => {
+      const text = $(el).clone().children().remove().end().text().trim();
+      const match = text.match(/RRN[^\d]*(\d{8,15})/i);
+      if (match) { rrn = match[1]; return false; }
+    });
+  }
+
+  const refundId = getText("Refund Id") || getText("Refund ID") || getText("Refund id");
+  const refundAmount = getText("Refund Amount") || getText("Refund amount");
+  const initiatedOn = getText("Initiated On") || getText("Initiated on");
+  const paymentAmount = getText("Payment Amount") || getText("Payment amount");
+  const paymentId = getText("Payment Id") || getText("Payment ID");
+
+  // Payment Via can be multi-line (UPI VPA + "Upi")
+  let paymentVia = getText("Payment Via") || getText("Payment via");
+  if (!paymentVia) {
+    $("td").each((_, el) => {
+      const text = $(el).text().trim().toLowerCase();
+      if (text === "payment via") {
+        const $row = $(el).closest("tr");
+        const nextCell = $row.find("td").eq(1);
+        if (nextCell.length) {
+          paymentVia = nextCell.text().trim().replace(/\s+/g, " ");
+          return false;
+        }
+      }
+    });
+  }
+
+  // Mobile Number
+  let mobileNumber = getText("Mobile Number") || getText("Mobile number") || getText("Phone");
+  if (!mobileNumber) {
+    const fullText = $.text();
+    const mobileMatch = fullText.match(/(\+91[\s-]?\d{10}|\d{10})/);
+    if (mobileMatch) mobileNumber = mobileMatch[1];
+  }
+
+  // Email — from "to" header passed in, or extract from body
+  let email = toEmail || "";
+  if (!email) {
+    const fullText = $.text();
+    const emailMatch = fullText.match(/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/);
+    if (emailMatch) email = emailMatch[0];
+  }
+
+  if (!refundId && !rrn && !refundAmount) return null;
+
+  return { rrn, refundAmount, refundId, initiatedOn, paymentAmount, paymentId, paymentVia, mobileNumber, email };
+}
+
+function parseRazorpayPaymentHtml(html, toEmail) {
+  const $ = cheerio.load(html);
+  const bodyText = $.text().replace(/\s+/g, " ");
+
+  // Must contain "Paid Successfully" to be a payment confirmation
+  if (!/paid\s+successfully/i.test(bodyText)) return null;
+
+  const getText = (label) => {
+    let found = "";
+    $("td, th, p, span, div").each((_, el) => {
+      const text = $(el).text().trim().replace(/\s+/g, " ");
+      if (text.toLowerCase() === label.toLowerCase()) {
+        const $row = $(el).closest("tr");
+        if ($row.length) {
+          const cells = $row.find("td");
+          const idx = cells.index(el);
+          if (idx >= 0 && idx < cells.length - 1) {
+            const val = $(cells[idx + 1]).text().trim().replace(/\s+/g, " ");
+            if (val) { found = val; return false; }
+          }
+        }
+        const $next = $(el).next();
+        if ($next.length) {
+          const val = $next.text().trim().replace(/\s+/g, " ");
+          if (val) { found = val; return false; }
+        }
+      }
+    });
+    return found;
+  };
+
+  // Payment ID
+  const paymentId = getText("Payment Id") || getText("Payment ID") || getText("Payment id");
+
+  // Method (UPI VPA etc)
+  const method = getText("Method") || getText("Payment Method") || getText("method");
+
+  // Paid On
+  const paidOn = getText("Paid On") || getText("paid on") || getText("Date");
+
+  // Amount — look for prominent ₹ amount
+  let amount = "";
+  $("td, div, p, span, h1, h2, h3").each((_, el) => {
+    const text = $(el).text().trim().replace(/\s+/g, " ");
+    const match = text.match(/^₹\s*[\d,]+(?:\.\d{1,2})?$/);
+    if (match) { amount = text; return false; }
+  });
+  if (!amount) {
+    const m = bodyText.match(/₹\s*([\d,]+(?:\.\d{1,2})?)/);
+    if (m) amount = "₹" + m[1];
+  }
+
+  // Merchant name — often the first prominent text / heading in the email
+  let merchant = "";
+  $("h1, h2, h3, td[style*='font-size:20'], td[style*='font-size: 20']").each((_, el) => {
+    const t = $(el).text().trim().replace(/\s+/g, " ");
+    if (t && !/paid\s+successfully/i.test(t) && !/₹/.test(t) && t.length < 80) {
+      merchant = t; return false;
+    }
+  });
+
+  // Mobile
+  let mobileNumber = getText("Mobile Number") || getText("Mobile") || "";
+  if (!mobileNumber) {
+    const m = bodyText.match(/(\+91[\s-]?\d{10}|\d{10})/);
+    if (m) mobileNumber = m[1];
+  }
+
+  // Email
+  let email = getText("Email") || getText("email") || toEmail || "";
+
+  if (!paymentId && !amount) return null;
+
+  return { type: "payment", merchant, amount, paymentId, method, paidOn, email, mobileNumber };
+}
+
+app.post("/api/razorpay-scan", async (req, res) => {
+  const { sudoPassword, startTimeIST } = req.body;
+  if (!sudoPassword || sudoPassword !== SUDO_PASSWORD) {
+    return res.status(401).json({ error: "Invalid sudo password" });
+  }
+  if (!startTimeIST) {
+    return res.status(400).json({ error: "Missing startTimeIST" });
+  }
+
+  const startDate = new Date(startTimeIST);
+  if (isNaN(startDate.getTime())) {
+    return res.status(400).json({ error: "Invalid startTimeIST format" });
+  }
+
+  const afterEpochSeconds = Math.floor(startDate.getTime() / 1000);
+  const query = `from:no-reply@razorpay.com after:${afterEpochSeconds}`;
+  console.log("[razorpay-scan] Query:", query);
+
+  try {
+    let allMessages = [];
+    let pageToken = undefined;
+    do {
+      const listResponse = await gmail.users.messages.list({
+        userId: "me",
+        q: query,
+        maxResults: 200,
+        pageToken,
+      });
+      const messages = listResponse.data.messages || [];
+      allMessages = allMessages.concat(messages);
+      pageToken = listResponse.data.nextPageToken;
+    } while (pageToken);
+
+    console.log("[razorpay-scan] Found", allMessages.length, "messages");
+    if (allMessages.length === 0) return res.json({ totalFound: 0, refunds: [], payments: [] });
+
+    const batchSize = 20;
+    const refunds = [];
+    const payments = [];
+
+    for (let i = 0; i < allMessages.length; i += batchSize) {
+      const batch = allMessages.slice(i, i + batchSize);
+      const emailResponses = await Promise.all(
+        batch.map((msg) => gmail.users.messages.get({ userId: "me", id: msg.id, format: "full" }))
+      );
+
+      for (const response of emailResponses) {
+        const detail = response.data;
+        const internalDate = parseInt(detail.internalDate || "0", 10);
+        const receivedAt = toISTString(internalDate);
+        const headers = detail.payload.headers || [];
+        const getHeader = (name) =>
+          headers.find((h) => h.name.toLowerCase() === name.toLowerCase())?.value || "";
+        const toEmail = getHeader("to");
+        const subject = getHeader("subject");
+        const html = getEmailBodyHtml(detail.payload);
+
+        // Try payment confirmation parser first
+        const payment = parseRazorpayPaymentHtml(html, toEmail);
+        if (payment) {
+          payments.push({ ...payment, subject, receivedAt });
+          continue;
+        }
+
+        // Then try refund/RRN parser
+        const refund = parseRazorpayRefundHtml(html, toEmail);
+        if (refund) {
+          refunds.push({ ...refund, subject, receivedAt });
+        }
+      }
+    }
+
+    console.log("[razorpay-scan] Refunds:", refunds.length, "Payments:", payments.length);
+    res.json({ totalFound: refunds.length + payments.length, refunds, payments });
+  } catch (err) {
+    console.error("[razorpay-scan] Error:", err.message);
+    res.status(500).json({ error: err.message || "Failed to scan Gmail" });
+  }
+});
+
+// --- JioGames Order PDF Scanner ---
+app.post("/api/jiogames-scan", async (req, res) => {
+  const { sudoPassword, startTimeIST } = req.body;
+  if (!sudoPassword || sudoPassword !== SUDO_PASSWORD) {
+    return res.status(401).json({ error: "Invalid sudo password" });
+  }
+  if (!startTimeIST) {
+    return res.status(400).json({ error: "Missing startTimeIST" });
+  }
+
+  const startDate = new Date(startTimeIST);
+  if (isNaN(startDate.getTime())) {
+    return res.status(400).json({ error: "Invalid startTimeIST format" });
+  }
+
+  const afterEpochSeconds = Math.floor(startDate.getTime() / 1000);
+  const query = `from:orders@jiogames.com after:${afterEpochSeconds}`;
+  console.log("[jiogames-scan] Query:", query);
+
+  try {
+    let allMessages = [];
+    let pageToken = undefined;
+    do {
+      const listResponse = await gmail.users.messages.list({
+        userId: "me",
+        q: query,
+        maxResults: 200,
+        pageToken,
+      });
+      const messages = listResponse.data.messages || [];
+      allMessages = allMessages.concat(messages);
+      pageToken = listResponse.data.nextPageToken;
+    } while (pageToken);
+
+    console.log("[jiogames-scan] Found", allMessages.length, "messages");
+    if (allMessages.length === 0) return res.json({ totalFound: 0, orders: [] });
+
+    const batchSize = 20;
+    const orders = [];
+
+    for (let i = 0; i < allMessages.length; i += batchSize) {
+      const batch = allMessages.slice(i, i + batchSize);
+      const emailResponses = await Promise.all(
+        batch.map((msg) => gmail.users.messages.get({ userId: "me", id: msg.id, format: "full" }))
+      );
+
+      for (const response of emailResponses) {
+        const detail = response.data;
+        const internalDate = parseInt(detail.internalDate || "0", 10);
+        const receivedAt = toISTString(internalDate);
+        const headers = detail.payload.headers || [];
+        const getHeader = (name) =>
+          headers.find((h) => h.name.toLowerCase() === name.toLowerCase())?.value || "";
+        const subject = getHeader("subject");
+        const toEmail = getHeader("to");
+
+        // Collect all attachments (especially PDFs)
+        const attachmentInfos = findAttachments(detail.payload);
+        const attachments = [];
+
+        for (const att of attachmentInfos) {
+          try {
+            const attResponse = await gmail.users.messages.attachments.get({
+              userId: "me",
+              messageId: detail.id,
+              id: att.attachmentId,
+            });
+            const rawData = attResponse.data.data || "";
+            const standardBase64 = rawData.replace(/-/g, "+").replace(/_/g, "/");
+            attachments.push({
+              filename: att.filename,
+              mimeType: att.mimeType,
+              base64Data: standardBase64,
+              sizeBytes: att.sizeBytes,
+            });
+          } catch (attErr) {
+            console.warn("[jiogames-scan] Failed to fetch attachment:", att.filename);
+          }
+        }
+
+        // Also try to extract any inline data from HTML body
+        const html = getEmailBodyHtml(detail.payload);
+        const $ = cheerio.load(html);
+
+        // Try to extract game name / order details from the email body
+        let gameName = "";
+        let orderId = "";
+        let amount = "";
+
+        // Common patterns in JioGames order emails
+        const bodyText = $.text().replace(/\s+/g, " ");
+        const orderMatch = bodyText.match(/order\s*(?:id|no|number)[:\s#]*([A-Z0-9\-]+)/i);
+        if (orderMatch) orderId = orderMatch[1];
+        const amountMatch = bodyText.match(/(?:₹|Rs\.?|INR)\s*([\d,]+(?:\.\d{1,2})?)/i);
+        if (amountMatch) amount = "₹" + amountMatch[1];
+
+        // Try to get game name from subject
+        const subjectClean = subject.replace(/order\s*confirm(?:ation)?/gi, "").replace(/jiogames/gi, "").trim();
+        gameName = subjectClean || subject;
+
+        orders.push({ subject, gameName, orderId, amount, toEmail, receivedAt, attachments });
+      }
+    }
+
+    console.log("[jiogames-scan] Total orders:", orders.length);
+    // Sort newest first
+    orders.sort((a, b) => new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime());
+    res.json({ totalFound: orders.length, orders });
+  } catch (err) {
+    console.error("[jiogames-scan] Error:", err.message);
+    res.status(500).json({ error: err.message || "Failed to scan Gmail" });
+  }
+});
+
 // --- Serve Frontend Static Files (Production) ---
 const frontendDist = path.join(__dirname, "../frontend/dist");
 app.use(express.static(frontendDist));

@@ -682,46 +682,54 @@ app.post("/api/razorpay-scan", async (req, res) => {
         // Try payment confirmation parser first
         const payment = parseRazorpayPaymentHtml(html, toEmail);
         if (payment) {
-          payments.push({ ...payment, subject, receivedAt });
+          payments.push({ ...payment, subject, receivedAt, _ts: internalDate });
           continue;
         }
 
         // Then try refund/RRN parser
         const refund = parseRazorpayRefundHtml(html, toEmail);
         if (refund) {
-          refunds.push({ ...refund, subject, receivedAt });
+          refunds.push({ ...refund, subject, receivedAt, _ts: internalDate });
         }
       }
     }
 
-    // ── O(n) deduplication by refundId ──────────────────────────────────────
-    // Map<refundId, { row, count }>  — single pass, optimal for 100K+ records
+    // ── Step 1: Deduplicate by refundId — keep the entry with the latest timestamp ──
     const refundMap = new Map();
     for (const row of refunds) {
       const key = row.refundId || row.rrn || `${row.paymentId}_${row.refundAmount}`;
       if (!refundMap.has(key)) {
-        refundMap.set(key, { row, count: 1 });
+        refundMap.set(key, row);
       } else {
-        const entry = refundMap.get(key);
-        entry.count++;
-        // Prefer the "successful" record over "initiated"
-        if (row.status === "successful" && entry.row.status !== "successful") {
-          entry.row = row;
+        // Keep whichever has the later timestamp
+        if (row._ts > refundMap.get(key)._ts) {
+          refundMap.set(key, row);
         }
       }
     }
+    const afterRefundIdDedup = Array.from(refundMap.values());
 
-    const deduplicatedRefunds = [];  // all resolved records (for display)
-    const completedRefunds = [];     // appeared >=2 times — both emails received, refund completed (sheet 1)
-    const pendingRefunds = [];       // appeared exactly once — refund initiated but not yet successful (sheet 2)
-    for (const { row, count } of refundMap.values()) {
-      deduplicatedRefunds.push(row);
-      if (count >= 2) {
-        completedRefunds.push(row);
+    // ── Step 2: Deduplicate by email (column J) — keep the entry with the latest timestamp ──
+    const emailMap = new Map();
+    for (const row of afterRefundIdDedup) {
+      const emailKey = (row.email || "").toLowerCase().trim();
+      if (!emailKey) continue; // skip blank emails, always keep them
+      if (!emailMap.has(emailKey)) {
+        emailMap.set(emailKey, row);
       } else {
-        pendingRefunds.push(row);
+        if (row._ts > emailMap.get(emailKey)._ts) {
+          emailMap.set(emailKey, row);
+        }
       }
     }
+    // Rows with blank email skip the emailMap, re-add them
+    const blankEmailRows = afterRefundIdDedup.filter(r => !(r.email || "").trim());
+    const deduplicatedRefunds = [...emailMap.values(), ...blankEmailRows]
+      .map(({ _ts, ...rest }) => rest); // strip internal _ts field
+
+    // ── Step 3: Split by status — successful = completed, initiated = pending ──
+    const completedRefunds = deduplicatedRefunds.filter(r => r.status === "successful");
+    const pendingRefunds   = deduplicatedRefunds.filter(r => r.status !== "successful");
 
     const duplicatesRemoved = refunds.length - deduplicatedRefunds.length;
     console.log(

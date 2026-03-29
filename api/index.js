@@ -537,7 +537,12 @@ function parseRazorpayRefundHtml(html, toEmail) {
 
   if (!refundId && !rrn && !refundAmount) return null;
 
-  return { rrn, refundAmount, refundId, initiatedOn, paymentAmount, paymentId, paymentVia, mobileNumber, email };
+  // Detect status: "successful" if body/subject mentions it, otherwise "initiated"
+  const status = /refund\s+(was\s+)?success(ful(ly)?)?|successfully\s+processed/i.test(bodyText)
+    ? "successful"
+    : "initiated";
+
+  return { rrn, refundAmount, refundId, initiatedOn, paymentAmount, paymentId, paymentVia, mobileNumber, email, status };
 }
 
 function parseRazorpayPaymentHtml(html, toEmail) {
@@ -688,8 +693,42 @@ app.post("/api/razorpay-scan", async (req, res) => {
       }
     }
 
-    console.log("[razorpay-scan] Refunds:", refunds.length, "Payments:", payments.length);
-    res.json({ totalFound: refunds.length + payments.length, refunds, payments });
+    // ── O(n) deduplication by refundId ──────────────────────────────────────
+    // Map<refundId, { row, count }>  — single pass, optimal for 100K+ records
+    const refundMap = new Map();
+    for (const row of refunds) {
+      const key = row.refundId || row.rrn || `${row.paymentId}_${row.refundAmount}`;
+      if (!refundMap.has(key)) {
+        refundMap.set(key, { row, count: 1 });
+      } else {
+        const entry = refundMap.get(key);
+        entry.count++;
+        // Prefer the "successful" record over "initiated"
+        if (row.status === "successful" && entry.row.status !== "successful") {
+          entry.row = row;
+        }
+      }
+    }
+
+    const deduplicatedRefunds = [];  // all resolved records (sheet 1)
+    const pendingRefunds = [];       // appeared exactly once — no "successful" counterpart yet (sheet 2)
+    for (const { row, count } of refundMap.values()) {
+      deduplicatedRefunds.push(row);
+      if (count === 1) pendingRefunds.push(row);
+    }
+
+    const duplicatesRemoved = refunds.length - deduplicatedRefunds.length;
+    console.log(
+      `[razorpay-scan] Refunds raw=${refunds.length} deduped=${deduplicatedRefunds.length}`,
+      `removed=${duplicatesRemoved} pending=${pendingRefunds.length} Payments=${payments.length}`
+    );
+    res.json({
+      totalFound: deduplicatedRefunds.length + payments.length,
+      refunds: deduplicatedRefunds,
+      pendingRefunds,
+      duplicatesRemoved,
+      payments,
+    });
   } catch (err) {
     console.error("[razorpay-scan] Error:", err.message);
     res.status(500).json({ error: err.message || "Failed to scan Gmail" });

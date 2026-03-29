@@ -58,6 +58,7 @@ interface RazorpayRefundRow {
   paymentVia: string;
   mobileNumber: string;
   email: string;
+  status: "successful" | "initiated";
   subject: string;
   receivedAt: string;
 }
@@ -77,6 +78,8 @@ interface RazorpayPaymentRow {
 interface RazorpayScanResult {
   totalFound: number;
   refunds: RazorpayRefundRow[];
+  pendingRefunds: RazorpayRefundRow[];
+  duplicatesRemoved: number;
   payments: RazorpayPaymentRow[];
 }
 
@@ -214,7 +217,7 @@ function RazorpayResults({
   onDownloadExcel: () => void;
   onDownloadCSV: () => void;
 }) {
-  const [tab, setTab] = useState<"payments" | "refunds">(
+  const [tab, setTab] = useState<"payments" | "refunds" | "pending">(
     (result.payments?.length ?? 0) > 0 ? "payments" : "refunds"
   );
 
@@ -226,10 +229,20 @@ function RazorpayResults({
           <h2 className="text-2xl font-bold text-blue-400 flex items-center">
             <CheckCircle2 className="w-6 h-6 mr-2" />Razorpay Scan Complete
           </h2>
-          <p className="text-sm text-blue-300/80 mt-1">
+          <p className="text-sm text-blue-300/80 mt-1 flex flex-wrap gap-x-3 gap-y-1 items-center">
             {(result.payments?.length ?? 0) > 0 && <><strong className="text-white">{result.payments.length}</strong> payment{result.payments.length !== 1 ? "s" : ""}</>}
-            {(result.payments?.length ?? 0) > 0 && (result.refunds?.length ?? 0) > 0 && " · "}
+            {(result.payments?.length ?? 0) > 0 && (result.refunds?.length ?? 0) > 0 && <span className="text-blue-500">·</span>}
             {(result.refunds?.length ?? 0) > 0 && <><strong className="text-white">{result.refunds.length}</strong> refund{result.refunds.length !== 1 ? "s" : ""}</>}
+            {(result.duplicatesRemoved ?? 0) > 0 && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-yellow-500/15 border border-yellow-500/30 text-yellow-400 text-xs font-medium">
+                {result.duplicatesRemoved} duplicate{result.duplicatesRemoved !== 1 ? "s" : ""} removed
+              </span>
+            )}
+            {(result.pendingRefunds?.length ?? 0) > 0 && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-orange-500/15 border border-orange-500/30 text-orange-400 text-xs font-medium">
+                {result.pendingRefunds.length} pending
+              </span>
+            )}
             {result.totalFound === 0 && "No emails found"}
           </p>
         </div>
@@ -252,16 +265,24 @@ function RazorpayResults({
       ) : (
         <div className="space-y-4">
           {/* Tabs */}
-          {(result.payments?.length ?? 0) > 0 && (result.refunds?.length ?? 0) > 0 && (
-            <div className="flex gap-2">
-              <button onClick={() => setTab("payments")}
-                className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${tab === "payments" ? "bg-blue-500 text-white" : "bg-gray-800 text-gray-400 hover:text-white"}`}>
-                Payments ({result.payments.length})
-              </button>
+          {((result.payments?.length ?? 0) > 0 || (result.pendingRefunds?.length ?? 0) > 0) && (result.refunds?.length ?? 0) > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {(result.payments?.length ?? 0) > 0 && (
+                <button onClick={() => setTab("payments")}
+                  className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${tab === "payments" ? "bg-blue-500 text-white" : "bg-gray-800 text-gray-400 hover:text-white"}`}>
+                  Payments ({result.payments.length})
+                </button>
+              )}
               <button onClick={() => setTab("refunds")}
                 className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${tab === "refunds" ? "bg-blue-500 text-white" : "bg-gray-800 text-gray-400 hover:text-white"}`}>
                 Refunds / RRN ({result.refunds.length})
               </button>
+              {(result.pendingRefunds?.length ?? 0) > 0 && (
+                <button onClick={() => setTab("pending")}
+                  className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${tab === "pending" ? "bg-orange-500 text-white" : "bg-gray-800 text-orange-400 hover:text-white"}`}>
+                  Pending Only ({result.pendingRefunds.length})
+                </button>
+              )}
             </div>
           )}
 
@@ -310,54 +331,69 @@ function RazorpayResults({
             </div>
           )}
 
-          {/* Refunds table */}
-          {((result.refunds?.length ?? 0) > 0 && (tab === "refunds" || (result.payments?.length ?? 0) === 0)) && (
-            <div className="bg-gray-900/50 border border-gray-700/50 rounded-2xl overflow-hidden shadow-lg shadow-black/10">
-              <div className="bg-gray-800/30 px-6 py-4 border-b border-gray-700/50 flex items-center gap-3">
-                <span className="w-2 h-6 bg-blue-500 rounded-full" />
-                <h3 className="font-semibold text-lg text-white">Refund Records (RRN)</h3>
-                <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-gray-800 border border-gray-700 text-gray-300 ml-auto">
-                  {result.refunds.length} record{result.refunds.length !== 1 ? "s" : ""}
-                </span>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm text-left">
-                  <thead className="bg-gray-800/10 text-gray-400 text-xs uppercase">
-                    <tr>
-                      <th className="px-4 py-4 font-medium whitespace-nowrap">Refund Amt</th>
-                      <th className="px-4 py-4 font-medium whitespace-nowrap">Refund ID</th>
-                      <th className="px-4 py-4 font-medium whitespace-nowrap">RRN (Tracking)</th>
-                      <th className="px-4 py-4 font-medium whitespace-nowrap">Initiated On</th>
-                      <th className="px-4 py-4 font-medium whitespace-nowrap">Payment Amt</th>
-                      <th className="px-4 py-4 font-medium whitespace-nowrap">Payment ID</th>
-                      <th className="px-4 py-4 font-medium whitespace-nowrap">Payment Via</th>
-                      <th className="px-4 py-4 font-medium whitespace-nowrap">Mobile</th>
-                      <th className="px-4 py-4 font-medium whitespace-nowrap">Email</th>
-                      <th className="px-4 py-4 font-medium whitespace-nowrap">Received (IST)</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-700/50">
-                    {result.refunds.map((row, i) => (
-                      <tr key={i} className="hover:bg-gray-800/20 transition-colors">
-                        <td className="px-4 py-3 font-semibold text-emerald-400 whitespace-nowrap">{row.refundAmount || "—"}</td>
-                        <td className="px-4 py-3 font-mono text-blue-400 bg-blue-500/5 whitespace-nowrap">{row.refundId || "—"}</td>
-                        <td className="px-4 py-3 font-mono text-yellow-400 whitespace-nowrap">{row.rrn || "—"}</td>
-                        <td className="px-4 py-3 text-gray-300 whitespace-nowrap">
-                          <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />{row.initiatedOn || "—"}</span>
-                        </td>
-                        <td className="px-4 py-3 text-gray-300 whitespace-nowrap">{row.paymentAmount || "—"}</td>
-                        <td className="px-4 py-3 font-mono text-purple-400 whitespace-nowrap">{row.paymentId || "—"}</td>
-                        <td className="px-4 py-3 text-gray-300 whitespace-nowrap">{row.paymentVia || "—"}</td>
-                        <td className="px-4 py-3 text-gray-300 whitespace-nowrap">{row.mobileNumber || "—"}</td>
-                        <td className="px-4 py-3 text-gray-400 text-xs break-all">{row.email || "—"}</td>
-                        <td className="px-4 py-3 text-gray-400 whitespace-nowrap">{row.receivedAt}</td>
+          {/* Refunds / Pending table */}
+          {((result.refunds?.length ?? 0) > 0 && (tab === "refunds" || tab === "pending" || (result.payments?.length ?? 0) === 0)) && (() => {
+            const rows = tab === "pending" && (result.pendingRefunds?.length ?? 0) > 0
+              ? result.pendingRefunds
+              : result.refunds;
+            const isPending = tab === "pending";
+            return (
+              <div className="bg-gray-900/50 border border-gray-700/50 rounded-2xl overflow-hidden shadow-lg shadow-black/10">
+                <div className={`bg-gray-800/30 px-6 py-4 border-b border-gray-700/50 flex items-center gap-3`}>
+                  <span className={`w-2 h-6 rounded-full ${isPending ? "bg-orange-500" : "bg-blue-500"}`} />
+                  <h3 className="font-semibold text-lg text-white">
+                    {isPending ? "Pending Refunds (Single Occurrence)" : "Refund Records — Deduplicated"}
+                  </h3>
+                  <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-gray-800 border border-gray-700 text-gray-300 ml-auto">
+                    {rows.length} record{rows.length !== 1 ? "s" : ""}
+                  </span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm text-left">
+                    <thead className="bg-gray-800/10 text-gray-400 text-xs uppercase">
+                      <tr>
+                        <th className="px-4 py-4 font-medium whitespace-nowrap">Status</th>
+                        <th className="px-4 py-4 font-medium whitespace-nowrap">Refund Amt</th>
+                        <th className="px-4 py-4 font-medium whitespace-nowrap">Refund ID</th>
+                        <th className="px-4 py-4 font-medium whitespace-nowrap">RRN (Tracking)</th>
+                        <th className="px-4 py-4 font-medium whitespace-nowrap">Initiated On</th>
+                        <th className="px-4 py-4 font-medium whitespace-nowrap">Payment Amt</th>
+                        <th className="px-4 py-4 font-medium whitespace-nowrap">Payment ID</th>
+                        <th className="px-4 py-4 font-medium whitespace-nowrap">Payment Via</th>
+                        <th className="px-4 py-4 font-medium whitespace-nowrap">Mobile</th>
+                        <th className="px-4 py-4 font-medium whitespace-nowrap">Email</th>
+                        <th className="px-4 py-4 font-medium whitespace-nowrap">Received (IST)</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-gray-700/50">
+                      {rows.map((row, i) => (
+                        <tr key={i} className="hover:bg-gray-800/20 transition-colors">
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            {row.status === "successful"
+                              ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-xs font-medium">✓ Successful</span>
+                              : <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-yellow-500/15 border border-yellow-500/30 text-yellow-400 text-xs font-medium">⏳ Initiated</span>
+                            }
+                          </td>
+                          <td className="px-4 py-3 font-semibold text-emerald-400 whitespace-nowrap">{row.refundAmount || "—"}</td>
+                          <td className="px-4 py-3 font-mono text-blue-400 bg-blue-500/5 whitespace-nowrap">{row.refundId || "—"}</td>
+                          <td className="px-4 py-3 font-mono text-yellow-400 whitespace-nowrap">{row.rrn || "—"}</td>
+                          <td className="px-4 py-3 text-gray-300 whitespace-nowrap">
+                            <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />{row.initiatedOn || "—"}</span>
+                          </td>
+                          <td className="px-4 py-3 text-gray-300 whitespace-nowrap">{row.paymentAmount || "—"}</td>
+                          <td className="px-4 py-3 font-mono text-purple-400 whitespace-nowrap">{row.paymentId || "—"}</td>
+                          <td className="px-4 py-3 text-gray-300 whitespace-nowrap">{row.paymentVia || "—"}</td>
+                          <td className="px-4 py-3 text-gray-300 whitespace-nowrap">{row.mobileNumber || "—"}</td>
+                          <td className="px-4 py-3 text-gray-400 text-xs break-all">{row.email || "—"}</td>
+                          <td className="px-4 py-3 text-gray-400 whitespace-nowrap">{row.receivedAt}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
         </div>
       )}
     </motion.div>
@@ -601,17 +637,27 @@ function ScannerView({ sudoPassword, onLogout }: { sudoPassword: string; onLogou
       XLSX.utils.book_append_sheet(wb, ws, "Payments");
     }
 
-    // Refunds sheet
+    // Refunds sheet (Sheet 1 — deduplicated, all statuses)
+    const refundRowMapper = (r: RazorpayRefundRow) => ({
+      "Status": r.status === "successful" ? "Successful" : "Initiated",
+      "Refund Amount": r.refundAmount, "Refund ID": r.refundId, "RRN (Tracking No.)": r.rrn,
+      "Initiated On": r.initiatedOn, "Payment Amount": r.paymentAmount, "Payment ID": r.paymentId,
+      "Payment Via": r.paymentVia, "Mobile Number": r.mobileNumber, "Email": r.email,
+      "Received At (IST)": r.receivedAt, "Subject": r.subject,
+    });
+    const refundCols = [{ wch: 12 }, { wch: 16 }, { wch: 22 }, { wch: 18 }, { wch: 16 }, { wch: 16 }, { wch: 22 }, { wch: 24 }, { wch: 16 }, { wch: 30 }, { wch: 22 }, { wch: 40 }];
+
     if ((razorpayResult.refunds?.length ?? 0) > 0) {
-      const refData = razorpayResult.refunds.map((r) => ({
-        "Refund Amount": r.refundAmount, "Refund ID": r.refundId, "RRN (Tracking No.)": r.rrn,
-        "Initiated On": r.initiatedOn, "Payment Amount": r.paymentAmount, "Payment ID": r.paymentId,
-        "Payment Via": r.paymentVia, "Mobile Number": r.mobileNumber, "Email": r.email,
-        "Received At (IST)": r.receivedAt, "Subject": r.subject,
-      }));
-      const ws = XLSX.utils.json_to_sheet(refData);
-      ws["!cols"] = [{ wch: 16 }, { wch: 22 }, { wch: 18 }, { wch: 16 }, { wch: 16 }, { wch: 22 }, { wch: 24 }, { wch: 16 }, { wch: 30 }, { wch: 22 }, { wch: 40 }];
-      XLSX.utils.book_append_sheet(wb, ws, "Refunds");
+      const ws = XLSX.utils.json_to_sheet(razorpayResult.refunds.map(refundRowMapper));
+      ws["!cols"] = refundCols;
+      XLSX.utils.book_append_sheet(wb, ws, "Refunds (Deduplicated)");
+    }
+
+    // Pending sheet (Sheet 2 — single-occurrence refunds only)
+    if ((razorpayResult.pendingRefunds?.length ?? 0) > 0) {
+      const ws = XLSX.utils.json_to_sheet(razorpayResult.pendingRefunds.map(refundRowMapper));
+      ws["!cols"] = refundCols;
+      XLSX.utils.book_append_sheet(wb, ws, "Pending (Single Occurrence)");
     }
 
     XLSX.writeFile(wb, `razorpay-scan-${date}.xlsx`);
@@ -633,10 +679,20 @@ function ScannerView({ sudoPassword, onLogout }: { sudoPassword: string; onLogou
     }
 
     if ((razorpayResult.refunds?.length ?? 0) > 0) {
-      const headers = ["Type", "Refund Amount", "Refund ID", "RRN (Tracking No.)", "Initiated On", "Payment Amount", "Payment ID", "Payment Via", "Mobile Number", "Email", "Received At (IST)", "Subject"];
+      const headers = ["Type", "Status", "Refund Amount", "Refund ID", "RRN (Tracking No.)", "Initiated On", "Payment Amount", "Payment ID", "Payment Via", "Mobile Number", "Email", "Received At (IST)", "Subject"];
       allRows.push(headers.map((h) => `"${h}"`).join(","));
       razorpayResult.refunds.forEach((r) => {
-        allRows.push(["Refund", r.refundAmount, r.refundId, r.rrn, r.initiatedOn, r.paymentAmount, r.paymentId, r.paymentVia, r.mobileNumber, r.email, r.receivedAt, r.subject]
+        allRows.push(["Refund", r.status === "successful" ? "Successful" : "Initiated", r.refundAmount, r.refundId, r.rrn, r.initiatedOn, r.paymentAmount, r.paymentId, r.paymentVia, r.mobileNumber, r.email, r.receivedAt, r.subject]
+          .map((v) => `"${(v || "").replace(/"/g, '""')}"`).join(","));
+      });
+    }
+
+    if ((razorpayResult.pendingRefunds?.length ?? 0) > 0) {
+      allRows.push(""); allRows.push('"-- PENDING REFUNDS (Single Occurrence) --"');
+      const headers = ["Type", "Status", "Refund Amount", "Refund ID", "RRN (Tracking No.)", "Initiated On", "Payment Amount", "Payment ID", "Payment Via", "Mobile Number", "Email", "Received At (IST)", "Subject"];
+      allRows.push(headers.map((h) => `"${h}"`).join(","));
+      razorpayResult.pendingRefunds.forEach((r) => {
+        allRows.push(["Pending", r.status === "successful" ? "Successful" : "Initiated", r.refundAmount, r.refundId, r.rrn, r.initiatedOn, r.paymentAmount, r.paymentId, r.paymentVia, r.mobileNumber, r.email, r.receivedAt, r.subject]
           .map((v) => `"${(v || "").replace(/"/g, '""')}"`).join(","));
       });
     }

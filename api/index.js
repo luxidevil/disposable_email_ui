@@ -711,21 +711,27 @@ app.post("/api/razorpay-scan", async (req, res) => {
       }
     }
 
-    const deduplicatedRefunds = [];  // all resolved records (sheet 1)
-    const pendingRefunds = [];       // appeared exactly once — no "successful" counterpart yet (sheet 2)
+    const deduplicatedRefunds = [];  // all resolved records (for display)
+    const completedRefunds = [];     // appeared >=2 times — both emails received, refund completed (sheet 1)
+    const pendingRefunds = [];       // appeared exactly once — refund initiated but not yet successful (sheet 2)
     for (const { row, count } of refundMap.values()) {
       deduplicatedRefunds.push(row);
-      if (count === 1) pendingRefunds.push(row);
+      if (count >= 2) {
+        completedRefunds.push(row);
+      } else {
+        pendingRefunds.push(row);
+      }
     }
 
     const duplicatesRemoved = refunds.length - deduplicatedRefunds.length;
     console.log(
       `[razorpay-scan] Refunds raw=${refunds.length} deduped=${deduplicatedRefunds.length}`,
-      `removed=${duplicatesRemoved} pending=${pendingRefunds.length} Payments=${payments.length}`
+      `removed=${duplicatesRemoved} completed=${completedRefunds.length} pending=${pendingRefunds.length} Payments=${payments.length}`
     );
     res.json({
       totalFound: deduplicatedRefunds.length + payments.length,
       refunds: deduplicatedRefunds,
+      completedRefunds,
       pendingRefunds,
       duplicatesRemoved,
       payments,
@@ -846,6 +852,98 @@ app.post("/api/jiogames-scan", async (req, res) => {
     res.json({ totalFound: orders.length, orders });
   } catch (err) {
     console.error("[jiogames-scan] Error:", err.message);
+    res.status(500).json({ error: err.message || "Failed to scan Gmail" });
+  }
+});
+
+// --- GamesTheShop PDF Scanner ---
+app.post("/api/gamestheshop-scan", async (req, res) => {
+  const { sudoPassword, startTimeIST } = req.body;
+  if (!sudoPassword || sudoPassword !== SUDO_PASSWORD) {
+    return res.status(401).json({ error: "Invalid sudo password" });
+  }
+  if (!startTimeIST) {
+    return res.status(400).json({ error: "Missing startTimeIST" });
+  }
+
+  const startDate = new Date(startTimeIST);
+  if (isNaN(startDate.getTime())) {
+    return res.status(400).json({ error: "Invalid startTimeIST format" });
+  }
+
+  const afterEpochSeconds = Math.floor(startDate.getTime() / 1000);
+  const query = `from:no-reply@gamestheshop.com after:${afterEpochSeconds}`;
+  console.log("[gamestheshop-scan] Query:", query);
+
+  try {
+    let allMessages = [];
+    let pageToken = undefined;
+    do {
+      const listResponse = await gmail.users.messages.list({
+        userId: "me",
+        q: query,
+        maxResults: 200,
+        pageToken,
+      });
+      const messages = listResponse.data.messages || [];
+      allMessages = allMessages.concat(messages);
+      pageToken = listResponse.data.nextPageToken;
+    } while (pageToken);
+
+    console.log("[gamestheshop-scan] Found", allMessages.length, "messages");
+    if (allMessages.length === 0) return res.json({ totalFound: 0, pdfs: [] });
+
+    const batchSize = 20;
+    const pdfs = [];
+
+    for (let i = 0; i < allMessages.length; i += batchSize) {
+      const batch = allMessages.slice(i, i + batchSize);
+      const emailResponses = await Promise.all(
+        batch.map((msg) => gmail.users.messages.get({ userId: "me", id: msg.id, format: "full" }))
+      );
+
+      for (const response of emailResponses) {
+        const detail = response.data;
+        const internalDate = parseInt(detail.internalDate || "0", 10);
+        const receivedAt = toISTString(internalDate);
+        const headers = detail.payload.headers || [];
+        const getHeader = (name) =>
+          headers.find((h) => h.name.toLowerCase() === name.toLowerCase())?.value || "";
+        const subject = getHeader("subject");
+
+        const attachmentInfos = findAttachments(detail.payload).filter(
+          (a) => a.mimeType === "application/pdf" || a.filename.toLowerCase().endsWith(".pdf")
+        );
+
+        for (const att of attachmentInfos) {
+          try {
+            const attResponse = await gmail.users.messages.attachments.get({
+              userId: "me",
+              messageId: detail.id,
+              id: att.attachmentId,
+            });
+            const rawData = attResponse.data.data || "";
+            const standardBase64 = rawData.replace(/-/g, "+").replace(/_/g, "/");
+            pdfs.push({
+              filename: att.filename,
+              mimeType: att.mimeType,
+              base64Data: standardBase64,
+              sizeBytes: att.sizeBytes,
+              subject,
+              receivedAt,
+            });
+          } catch (attErr) {
+            console.warn("[gamestheshop-scan] Failed to fetch attachment:", att.filename);
+          }
+        }
+      }
+    }
+
+    pdfs.sort((a, b) => new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime());
+    console.log("[gamestheshop-scan] Total PDFs:", pdfs.length);
+    res.json({ totalFound: pdfs.length, pdfs });
+  } catch (err) {
+    console.error("[gamestheshop-scan] Error:", err.message);
     res.status(500).json({ error: err.message || "Failed to scan Gmail" });
   }
 });

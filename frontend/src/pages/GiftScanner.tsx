@@ -18,6 +18,7 @@ import {
   RefreshCw,
   Gamepad2,
   ShoppingBag,
+  Store,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -78,9 +79,24 @@ interface RazorpayPaymentRow {
 interface RazorpayScanResult {
   totalFound: number;
   refunds: RazorpayRefundRow[];
+  completedRefunds: RazorpayRefundRow[];
   pendingRefunds: RazorpayRefundRow[];
   duplicatesRemoved: number;
   payments: RazorpayPaymentRow[];
+}
+
+interface GamesTheShopPdf {
+  filename: string;
+  mimeType: string;
+  base64Data: string;
+  sizeBytes: number;
+  subject: string;
+  receivedAt: string;
+}
+
+interface GamesTheShopScanResult {
+  totalFound: number;
+  pdfs: GamesTheShopPdf[];
 }
 
 interface JioGamesOrderRow {
@@ -102,6 +118,7 @@ interface JioGamesScanResult {
 
 const RAZORPAY_SENDER = "no-reply@razorpay.com";
 const JIOGAMES_SENDER = "orders@jiogames.com";
+const GAMESTHESHOP_SENDER = "no-reply@gamestheshop.com";
 
 function isRazorpay(email: string) {
   return email.trim().toLowerCase() === RAZORPAY_SENDER;
@@ -109,6 +126,10 @@ function isRazorpay(email: string) {
 
 function isJioGames(email: string) {
   return email.trim().toLowerCase() === JIOGAMES_SENDER;
+}
+
+function isGamesTheShop(email: string) {
+  return email.trim().toLowerCase() === GAMESTHESHOP_SENDER;
 }
 
 function base64ToBlob(base64: string, mimeType: string): Blob {
@@ -210,11 +231,13 @@ function LoginView({ onLogin }: { onLogin: (password: string) => void }) {
 
 function RazorpayResults({
   result,
-  onDownloadExcel,
+  onDownloadPaymentsExcel,
+  onDownloadRefundsExcel,
   onDownloadCSV,
 }: {
   result: RazorpayScanResult;
-  onDownloadExcel: () => void;
+  onDownloadPaymentsExcel: () => void;
+  onDownloadRefundsExcel: () => void;
   onDownloadCSV: () => void;
 }) {
   const [tab, setTab] = useState<"payments" | "refunds" | "pending">(
@@ -224,36 +247,52 @@ function RazorpayResults({
   return (
     <motion.div key="razorpay-results" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
       {/* Summary bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-blue-500/10 border border-blue-500/20 rounded-2xl p-6">
-        <div>
-          <h2 className="text-2xl font-bold text-blue-400 flex items-center">
-            <CheckCircle2 className="w-6 h-6 mr-2" />Razorpay Scan Complete
-          </h2>
-          <p className="text-sm text-blue-300/80 mt-1 flex flex-wrap gap-x-3 gap-y-1 items-center">
-            {(result.payments?.length ?? 0) > 0 && <><strong className="text-white">{result.payments.length}</strong> payment{result.payments.length !== 1 ? "s" : ""}</>}
-            {(result.payments?.length ?? 0) > 0 && (result.refunds?.length ?? 0) > 0 && <span className="text-blue-500">·</span>}
-            {(result.refunds?.length ?? 0) > 0 && <><strong className="text-white">{result.refunds.length}</strong> refund{result.refunds.length !== 1 ? "s" : ""}</>}
-            {(result.duplicatesRemoved ?? 0) > 0 && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-yellow-500/15 border border-yellow-500/30 text-yellow-400 text-xs font-medium">
-                {result.duplicatesRemoved} duplicate{result.duplicatesRemoved !== 1 ? "s" : ""} removed
-              </span>
-            )}
-            {(result.pendingRefunds?.length ?? 0) > 0 && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-orange-500/15 border border-orange-500/30 text-orange-400 text-xs font-medium">
-                {result.pendingRefunds.length} pending
-              </span>
-            )}
-            {result.totalFound === 0 && "No emails found"}
+      <div className="flex flex-col gap-4 bg-blue-500/10 border border-blue-500/20 rounded-2xl p-6">
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+          <div>
+            <h2 className="text-2xl font-bold text-blue-400 flex items-center">
+              <CheckCircle2 className="w-6 h-6 mr-2" />Razorpay Scan Complete
+            </h2>
+            <p className="text-sm text-blue-300/80 mt-1 flex flex-wrap gap-x-3 gap-y-1 items-center">
+              {(result.payments?.length ?? 0) > 0 && <><strong className="text-white">{result.payments.length}</strong> payment{result.payments.length !== 1 ? "s" : ""}</>}
+              {(result.payments?.length ?? 0) > 0 && (result.refunds?.length ?? 0) > 0 && <span className="text-blue-500">·</span>}
+              {(result.refunds?.length ?? 0) > 0 && <><strong className="text-white">{result.refunds.length}</strong> refund{result.refunds.length !== 1 ? "s" : ""}</>}
+              {(result.duplicatesRemoved ?? 0) > 0 && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-yellow-500/15 border border-yellow-500/30 text-yellow-400 text-xs font-medium">
+                  {result.duplicatesRemoved} duplicate{result.duplicatesRemoved !== 1 ? "s" : ""} merged
+                </span>
+              )}
+              {(result.pendingRefunds?.length ?? 0) > 0 && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-orange-500/15 border border-orange-500/30 text-orange-400 text-xs font-medium">
+                  {result.pendingRefunds.length} pending
+                </span>
+              )}
+              {result.totalFound === 0 && "No emails found"}
+            </p>
+          </div>
+        </div>
+        {/* Export buttons */}
+        <div className="flex flex-wrap gap-2 pt-1 border-t border-blue-500/20">
+          <p className="w-full text-xs text-blue-300/60 font-medium uppercase tracking-wider mb-1">Export</p>
+          {(result.payments?.length ?? 0) > 0 && (
+            <Button onClick={onDownloadPaymentsExcel} className="bg-green-600 hover:bg-green-700 text-white shadow-lg shadow-green-500/20 text-sm">
+              <Download className="w-4 h-4 mr-2" />Successful Payments (.xlsx)
+            </Button>
+          )}
+          {(result.refunds?.length ?? 0) > 0 && (
+            <Button onClick={onDownloadRefundsExcel} className="bg-blue-500 hover:bg-blue-600 text-white shadow-lg shadow-blue-500/20 text-sm">
+              <Download className="w-4 h-4 mr-2" />Refunds (.xlsx)
+            </Button>
+          )}
+          <Button onClick={onDownloadCSV} disabled={result.totalFound === 0} variant="outline" className="border-blue-500/50 text-blue-400 hover:bg-blue-500/10 text-sm">
+            <Download className="w-4 h-4 mr-2" />CSV (All)
+          </Button>
+        </div>
+        {(result.refunds?.length ?? 0) > 0 && (
+          <p className="text-xs text-blue-300/50">
+            Refunds Excel: <strong className="text-blue-300/80">Sheet 1</strong> — {result.completedRefunds?.length ?? 0} completed (both emails received) · <strong className="text-blue-300/80">Sheet 2</strong> — {result.pendingRefunds?.length ?? 0} initiated only (awaiting completion)
           </p>
-        </div>
-        <div className="flex gap-2 shrink-0">
-          <Button onClick={onDownloadExcel} disabled={result.totalFound === 0} className="bg-blue-500 hover:bg-blue-600 text-white shadow-lg shadow-blue-500/20">
-            <Download className="w-4 h-4 mr-2" />Excel (.xlsx)
-          </Button>
-          <Button onClick={onDownloadCSV} disabled={result.totalFound === 0} variant="outline" className="border-blue-500/50 text-blue-400 hover:bg-blue-500/10">
-            <Download className="w-4 h-4 mr-2" />CSV
-          </Button>
-        </div>
+        )}
       </div>
 
       {result.totalFound === 0 ? (
@@ -524,6 +563,71 @@ function JioGamesResults({
   );
 }
 
+// ── GamesTheShop PDF Results ───────────────────────────────────────────────
+
+function GamesTheShopResults({
+  result,
+}: {
+  result: GamesTheShopScanResult;
+}) {
+  return (
+    <motion.div key="gamestheshop-results" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+      {/* Summary bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-purple-500/10 border border-purple-500/20 rounded-2xl p-6">
+        <div>
+          <h2 className="text-2xl font-bold text-purple-400 flex items-center">
+            <CheckCircle2 className="w-6 h-6 mr-2" />GamesTheShop Scan Complete
+          </h2>
+          <p className="text-sm text-purple-300/80 mt-1">
+            Found <strong className="text-white">{result.totalFound}</strong> PDF{result.totalFound !== 1 ? "s" : ""} across all emails.
+          </p>
+        </div>
+      </div>
+
+      {result.totalFound === 0 ? (
+        <div className="flex flex-col items-center justify-center py-16 border border-gray-700/50 rounded-2xl bg-gray-900/50">
+          <AlertCircle className="w-12 h-12 text-gray-500 mb-4" />
+          <p className="text-lg font-medium text-white">No PDFs found</p>
+          <p className="text-sm text-gray-400 mt-1">No emails from no-reply@gamestheshop.com with PDF attachments were found.</p>
+        </div>
+      ) : (
+        <div className="bg-gray-900/50 border border-gray-700/50 rounded-2xl overflow-hidden shadow-lg shadow-black/10">
+          <div className="bg-gray-800/30 px-6 py-4 border-b border-gray-700/50 flex items-center gap-3">
+            <span className="w-2 h-6 bg-purple-500 rounded-full" />
+            <h3 className="font-semibold text-lg text-white">PDF Attachments</h3>
+            <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-gray-800 border border-gray-700 text-gray-300 ml-auto">
+              {result.totalFound} file{result.totalFound !== 1 ? "s" : ""}
+            </span>
+          </div>
+          <div className="divide-y divide-gray-700/50">
+            {result.pdfs.map((pdf, i) => (
+              <div key={i} className="flex items-center gap-4 px-6 py-4 hover:bg-gray-800/20 transition-colors group">
+                <div className="w-10 h-10 rounded-xl bg-purple-500/15 border border-purple-500/20 flex items-center justify-center shrink-0">
+                  <FileText className="w-5 h-5 text-purple-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-white font-medium text-sm truncate">{pdf.filename}</p>
+                  <p className="text-xs text-gray-500 mt-0.5 truncate">{pdf.subject}</p>
+                  <p className="text-xs text-gray-600 mt-0.5 flex items-center gap-1">
+                    <Calendar className="w-3 h-3" />{pdf.receivedAt}
+                    {pdf.sizeBytes > 0 && <span className="ml-2">{formatBytes(pdf.sizeBytes)}</span>}
+                  </p>
+                </div>
+                <button
+                  onClick={() => downloadAttachment(pdf.base64Data, pdf.filename, pdf.mimeType)}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-purple-500/10 border border-purple-500/20 hover:bg-purple-500/20 transition-colors text-purple-300 hover:text-purple-200 text-xs font-medium shrink-0"
+                >
+                  <Download className="w-4 h-4" />Download
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </motion.div>
+  );
+}
+
 // ── Scanner View ───────────────────────────────────────────────────────────
 
 function ScannerView({ sudoPassword, onLogout }: { sudoPassword: string; onLogout: () => void }) {
@@ -534,6 +638,7 @@ function ScannerView({ sudoPassword, onLogout }: { sudoPassword: string; onLogou
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const [razorpayResult, setRazorpayResult] = useState<RazorpayScanResult | null>(null);
   const [jioGamesResult, setJioGamesResult] = useState<JioGamesScanResult | null>(null);
+  const [gamesTheShopResult, setGamesTheShopResult] = useState<GamesTheShopScanResult | null>(null);
 
   const handleScan = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -546,6 +651,7 @@ function ScannerView({ sudoPassword, onLogout }: { sudoPassword: string; onLogou
     setScanResult(null);
     setRazorpayResult(null);
     setJioGamesResult(null);
+    setGamesTheShopResult(null);
 
     try {
       if (isRazorpay(senderEmail)) {
@@ -559,7 +665,7 @@ function ScannerView({ sudoPassword, onLogout }: { sudoPassword: string; onLogou
         if (!res.ok) { const err = await res.json().catch(() => ({ error: "Unknown error" })); throw new Error(err.error || "Scan failed"); }
         const result: RazorpayScanResult = await res.json();
         setRazorpayResult(result);
-        toast({ title: "Scan Complete", description: `Found ${result.totalFound} Razorpay refund${result.totalFound !== 1 ? "s" : ""}.` });
+        toast({ title: "Scan Complete", description: `Found ${result.totalFound} Razorpay record${result.totalFound !== 1 ? "s" : ""}.` });
       } else if (isJioGames(senderEmail)) {
         // ── JioGames order scan ──
         const res = await fetch("/api/jiogames-scan", {
@@ -572,6 +678,18 @@ function ScannerView({ sudoPassword, onLogout }: { sudoPassword: string; onLogou
         const result: JioGamesScanResult = await res.json();
         setJioGamesResult(result);
         toast({ title: "Scan Complete", description: `Found ${result.totalFound} JioGames order email${result.totalFound !== 1 ? "s" : ""}.` });
+      } else if (isGamesTheShop(senderEmail)) {
+        // ── GamesTheShop PDF scan ──
+        const res = await fetch("/api/gamestheshop-scan", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sudoPassword, startTimeIST }),
+        });
+        if (res.status === 401) { toast({ variant: "destructive", title: "Authentication Failed", description: "Invalid sudo password." }); onLogout(); return; }
+        if (!res.ok) { const err = await res.json().catch(() => ({ error: "Unknown error" })); throw new Error(err.error || "Scan failed"); }
+        const result: GamesTheShopScanResult = await res.json();
+        setGamesTheShopResult(result);
+        toast({ title: "Scan Complete", description: `Found ${result.totalFound} PDF${result.totalFound !== 1 ? "s" : ""} from GamesTheShop.` });
       } else {
         // ── Gift card scan ──
         const res = await fetch("/api/gift-scan", {
@@ -619,48 +737,53 @@ function ScannerView({ sudoPassword, onLogout }: { sudoPassword: string; onLogou
   };
 
   // ── Razorpay Excel / CSV ──
-  const handleRazorpayExcel = () => {
-    if (!razorpayResult || razorpayResult.totalFound === 0) return;
+  const refundRowMapper = (r: RazorpayRefundRow) => ({
+    "Status": r.status === "successful" ? "Successful" : "Initiated",
+    "Refund Amount": r.refundAmount, "Refund ID": r.refundId, "RRN (Tracking No.)": r.rrn,
+    "Initiated On": r.initiatedOn, "Payment Amount": r.paymentAmount, "Payment ID": r.paymentId,
+    "Payment Via": r.paymentVia, "Mobile Number": r.mobileNumber, "Email": r.email,
+    "Received At (IST)": r.receivedAt, "Subject": r.subject,
+  });
+  const refundCols = [{ wch: 12 }, { wch: 16 }, { wch: 22 }, { wch: 18 }, { wch: 16 }, { wch: 16 }, { wch: 22 }, { wch: 24 }, { wch: 16 }, { wch: 30 }, { wch: 22 }, { wch: 40 }];
+
+  const handleRazorpayPaymentsExcel = () => {
+    if (!razorpayResult || (razorpayResult.payments?.length ?? 0) === 0) return;
+    const wb = XLSX.utils.book_new();
+    const date = new Date().toISOString().split("T")[0];
+    const payData = razorpayResult.payments.map((r) => ({
+      "Merchant": r.merchant, "Amount": r.amount, "Payment ID": r.paymentId,
+      "Method": r.method, "Paid On": r.paidOn,
+      "Email": r.email, "Mobile Number": r.mobileNumber,
+      "Received At (IST)": r.receivedAt, "Subject": r.subject,
+    }));
+    const ws = XLSX.utils.json_to_sheet(payData);
+    ws["!cols"] = [{ wch: 22 }, { wch: 12 }, { wch: 22 }, { wch: 28 }, { wch: 24 }, { wch: 30 }, { wch: 16 }, { wch: 22 }, { wch: 40 }];
+    XLSX.utils.book_append_sheet(wb, ws, "Successful Payments");
+    XLSX.writeFile(wb, `razorpay-payments-${date}.xlsx`);
+  };
+
+  const handleRazorpayRefundsExcel = () => {
+    if (!razorpayResult || (razorpayResult.refunds?.length ?? 0) === 0) return;
     const wb = XLSX.utils.book_new();
     const date = new Date().toISOString().split("T")[0];
 
-    // Payments sheet
-    if ((razorpayResult.payments?.length ?? 0) > 0) {
-      const payData = razorpayResult.payments.map((r) => ({
-        "Merchant": r.merchant, "Amount": r.amount, "Payment ID": r.paymentId,
-        "Method": r.method, "Paid On": r.paidOn,
-        "Email": r.email, "Mobile Number": r.mobileNumber,
-        "Received At (IST)": r.receivedAt, "Subject": r.subject,
-      }));
-      const ws = XLSX.utils.json_to_sheet(payData);
-      ws["!cols"] = [{ wch: 22 }, { wch: 12 }, { wch: 22 }, { wch: 28 }, { wch: 24 }, { wch: 30 }, { wch: 16 }, { wch: 22 }, { wch: 40 }];
-      XLSX.utils.book_append_sheet(wb, ws, "Payments");
-    }
-
-    // Refunds sheet (Sheet 1 — deduplicated, all statuses)
-    const refundRowMapper = (r: RazorpayRefundRow) => ({
-      "Status": r.status === "successful" ? "Successful" : "Initiated",
-      "Refund Amount": r.refundAmount, "Refund ID": r.refundId, "RRN (Tracking No.)": r.rrn,
-      "Initiated On": r.initiatedOn, "Payment Amount": r.paymentAmount, "Payment ID": r.paymentId,
-      "Payment Via": r.paymentVia, "Mobile Number": r.mobileNumber, "Email": r.email,
-      "Received At (IST)": r.receivedAt, "Subject": r.subject,
-    });
-    const refundCols = [{ wch: 12 }, { wch: 16 }, { wch: 22 }, { wch: 18 }, { wch: 16 }, { wch: 16 }, { wch: 22 }, { wch: 24 }, { wch: 16 }, { wch: 30 }, { wch: 22 }, { wch: 40 }];
-
-    if ((razorpayResult.refunds?.length ?? 0) > 0) {
-      const ws = XLSX.utils.json_to_sheet(razorpayResult.refunds.map(refundRowMapper));
+    // Sheet 1 — completed refunds (appeared in both type-2 and type-3 emails = same refundId twice)
+    const completedRows = razorpayResult.completedRefunds ?? [];
+    if (completedRows.length > 0) {
+      const ws = XLSX.utils.json_to_sheet(completedRows.map(refundRowMapper));
       ws["!cols"] = refundCols;
-      XLSX.utils.book_append_sheet(wb, ws, "Refunds (Deduplicated)");
+      XLSX.utils.book_append_sheet(wb, ws, "Completed Refunds");
     }
 
-    // Pending sheet (Sheet 2 — single-occurrence refunds only)
-    if ((razorpayResult.pendingRefunds?.length ?? 0) > 0) {
-      const ws = XLSX.utils.json_to_sheet(razorpayResult.pendingRefunds.map(refundRowMapper));
+    // Sheet 2 — pending refunds (appeared only once — initiated but not yet confirmed)
+    const pendingRows = razorpayResult.pendingRefunds ?? [];
+    if (pendingRows.length > 0) {
+      const ws = XLSX.utils.json_to_sheet(pendingRows.map(refundRowMapper));
       ws["!cols"] = refundCols;
-      XLSX.utils.book_append_sheet(wb, ws, "Pending (Single Occurrence)");
+      XLSX.utils.book_append_sheet(wb, ws, "Pending Refunds");
     }
 
-    XLSX.writeFile(wb, `razorpay-scan-${date}.xlsx`);
+    XLSX.writeFile(wb, `razorpay-refunds-${date}.xlsx`);
   };
 
   const handleRazorpayCSV = () => {
@@ -736,17 +859,18 @@ function ScannerView({ sudoPassword, onLogout }: { sudoPassword: string; onLogou
   const allAttachments = scanResult ? Object.values(scanResult.byValue).flat().flatMap((row) => row.attachments || []) : [];
   const razorpayMode = isRazorpay(senderEmail);
   const jioGamesMode = isJioGames(senderEmail);
+  const gamesTheShopMode = isGamesTheShop(senderEmail);
 
   return (
     <div className="min-h-screen flex flex-col p-4 md:p-8 max-w-7xl mx-auto bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950">
       <header className="flex items-center justify-between mb-8 pb-6 border-b border-gray-700/50">
         <div className="flex items-center gap-3">
-          <div className={`w-10 h-10 rounded-xl flex items-center justify-center border ${razorpayMode ? "bg-blue-500/20 border-blue-500/30" : jioGamesMode ? "bg-orange-500/20 border-orange-500/30" : "bg-emerald-500/20 border-emerald-500/30"}`}>
-            {razorpayMode ? <RefreshCw className="w-5 h-5 text-blue-400" /> : jioGamesMode ? <Gamepad2 className="w-5 h-5 text-orange-400" /> : <Gift className="w-5 h-5 text-emerald-400" />}
+          <div className={`w-10 h-10 rounded-xl flex items-center justify-center border ${razorpayMode ? "bg-blue-500/20 border-blue-500/30" : jioGamesMode ? "bg-orange-500/20 border-orange-500/30" : gamesTheShopMode ? "bg-purple-500/20 border-purple-500/30" : "bg-emerald-500/20 border-emerald-500/30"}`}>
+            {razorpayMode ? <RefreshCw className="w-5 h-5 text-blue-400" /> : jioGamesMode ? <Gamepad2 className="w-5 h-5 text-orange-400" /> : gamesTheShopMode ? <Store className="w-5 h-5 text-purple-400" /> : <Gift className="w-5 h-5 text-emerald-400" />}
           </div>
           <div>
-            <h1 className="text-xl font-bold text-white">{razorpayMode ? "Razorpay Refund Scanner" : jioGamesMode ? "JioGames Order Scanner" : "Gift Card Scanner"}</h1>
-            <p className="text-xs text-gray-400">{razorpayMode ? "Refund Tracking & Export Tool" : jioGamesMode ? "Order PDFs & Details Tool" : "Automated Extraction Tool"}</p>
+            <h1 className="text-xl font-bold text-white">{razorpayMode ? "Razorpay Refund Scanner" : jioGamesMode ? "JioGames Order Scanner" : gamesTheShopMode ? "GamesTheShop PDF Scanner" : "Gift Card Scanner"}</h1>
+            <p className="text-xs text-gray-400">{razorpayMode ? "Refund Tracking & Export Tool" : jioGamesMode ? "Order PDFs & Details Tool" : gamesTheShopMode ? "PDF Attachment Collector" : "Automated Extraction Tool"}</p>
           </div>
         </div>
         <Button variant="outline" size="sm" onClick={onLogout} className="text-gray-400 hover:text-white border-gray-700">
@@ -779,12 +903,17 @@ function ScannerView({ sudoPassword, onLogout }: { sudoPassword: string; onLogou
               </div>
               {razorpayMode && (
                 <p className="text-xs text-blue-400 bg-blue-500/10 border border-blue-500/20 rounded-lg px-3 py-2">
-                  Razorpay mode — extracts refund details &amp; exports to Excel.
+                  Razorpay mode — extracts payments &amp; refunds with separate Excel exports.
                 </p>
               )}
               {jioGamesMode && (
                 <p className="text-xs text-orange-400 bg-orange-500/10 border border-orange-500/20 rounded-lg px-3 py-2">
                   JioGames mode — collects all order PDFs &amp; exports details to Excel.
+                </p>
+              )}
+              {gamesTheShopMode && (
+                <p className="text-xs text-purple-400 bg-purple-500/10 border border-purple-500/20 rounded-lg px-3 py-2">
+                  GamesTheShop mode — lists all PDF attachments from emails for download.
                 </p>
               )}
             </div>
@@ -808,7 +937,7 @@ function ScannerView({ sudoPassword, onLogout }: { sudoPassword: string; onLogou
 
             <Button
               type="submit"
-              className={`w-full mt-4 text-white ${razorpayMode ? "bg-blue-500 hover:bg-blue-600" : jioGamesMode ? "bg-orange-500 hover:bg-orange-600" : "bg-emerald-500 hover:bg-emerald-600"}`}
+              className={`w-full mt-4 text-white ${razorpayMode ? "bg-blue-500 hover:bg-blue-600" : jioGamesMode ? "bg-orange-500 hover:bg-orange-600" : gamesTheShopMode ? "bg-purple-500 hover:bg-purple-600" : "bg-emerald-500 hover:bg-emerald-600"}`}
               disabled={scanning}
             >
               {scanning ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Scanning Inbox...</>) : (<><Search className="w-4 h-4 mr-2" />Generate Report</>)}
@@ -819,7 +948,7 @@ function ScannerView({ sudoPassword, onLogout }: { sudoPassword: string; onLogou
           <div className="mt-6 pt-5 border-t border-gray-700/50">
             <p className="text-xs text-gray-500 mb-3 font-medium uppercase tracking-wider">Quick Presets</p>
             <div className="flex flex-col gap-2">
-              {["no-reply@blinkit.com", "no-reply@razorpay.com", "orders@jiogames.com"].map((preset) => (
+              {["no-reply@blinkit.com", "no-reply@razorpay.com", "orders@jiogames.com", "no-reply@gamestheshop.com"].map((preset) => (
                 <button
                   key={preset}
                   type="button"
@@ -835,19 +964,21 @@ function ScannerView({ sudoPassword, onLogout }: { sudoPassword: string; onLogou
 
         <div className="space-y-6">
           <AnimatePresence mode="wait">
-            {!scanning && !scanResult && !razorpayResult && !jioGamesResult && (
+            {!scanning && !scanResult && !razorpayResult && !jioGamesResult && !gamesTheShopResult && (
               <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                 className="h-[400px] flex flex-col items-center justify-center border border-dashed border-gray-700/50 rounded-2xl bg-gray-900/30 text-center p-8"
               >
                 <div className="w-16 h-16 rounded-full bg-gray-800/50 flex items-center justify-center mb-4">
-                  {razorpayMode ? <RefreshCw className="w-8 h-8 text-gray-600" /> : jioGamesMode ? <Gamepad2 className="w-8 h-8 text-gray-600" /> : <Gift className="w-8 h-8 text-gray-600" />}
+                  {razorpayMode ? <RefreshCw className="w-8 h-8 text-gray-600" /> : jioGamesMode ? <Gamepad2 className="w-8 h-8 text-gray-600" /> : gamesTheShopMode ? <Store className="w-8 h-8 text-gray-600" /> : <Gift className="w-8 h-8 text-gray-600" />}
                 </div>
                 <h3 className="text-lg font-medium text-white mb-2">Ready to Scan</h3>
                 <p className="text-sm text-gray-400 max-w-sm">
                   {razorpayMode
-                    ? "Will scan for Razorpay refund emails and export all details to Excel."
+                    ? "Will scan for Razorpay emails and show separate export options for payments and refunds."
                     : jioGamesMode
                     ? "Will collect all JioGames order emails and their PDF attachments."
+                    : gamesTheShopMode
+                    ? "Will list all PDF attachments from GamesTheShop emails for download."
                     : "Configure the parameters on the left and hit generate to extract gift cards from Gmail."}
                 </p>
               </motion.div>
@@ -858,12 +989,17 @@ function ScannerView({ sudoPassword, onLogout }: { sudoPassword: string; onLogou
                 className="h-[400px] flex flex-col items-center justify-center border border-gray-700/50 rounded-2xl bg-gray-900/50 text-center p-8"
               >
                 <div className="relative mb-6">
-                  <div className={`absolute inset-0 blur-xl rounded-full ${razorpayMode ? "bg-blue-500/20" : jioGamesMode ? "bg-orange-500/20" : "bg-emerald-500/20"}`} />
-                  <Loader2 className={`w-12 h-12 animate-spin relative z-10 ${razorpayMode ? "text-blue-400" : jioGamesMode ? "text-orange-400" : "text-emerald-400"}`} />
+                  <div className={`absolute inset-0 blur-xl rounded-full ${razorpayMode ? "bg-blue-500/20" : jioGamesMode ? "bg-orange-500/20" : gamesTheShopMode ? "bg-purple-500/20" : "bg-emerald-500/20"}`} />
+                  <Loader2 className={`w-12 h-12 animate-spin relative z-10 ${razorpayMode ? "text-blue-400" : jioGamesMode ? "text-orange-400" : gamesTheShopMode ? "text-purple-400" : "text-emerald-400"}`} />
                 </div>
                 <h3 className="text-lg font-medium text-white animate-pulse">Scanning Emails...</h3>
                 <p className="text-sm text-gray-400 mt-2">This might take a few moments depending on inbox size.</p>
               </motion.div>
+            )}
+
+            {/* ── GamesTheShop results ── */}
+            {gamesTheShopResult && (
+              <GamesTheShopResults result={gamesTheShopResult} />
             )}
 
             {/* ── JioGames results ── */}
@@ -879,7 +1015,8 @@ function ScannerView({ sudoPassword, onLogout }: { sudoPassword: string; onLogou
             {razorpayResult && (
               <RazorpayResults
                 result={razorpayResult}
-                onDownloadExcel={handleRazorpayExcel}
+                onDownloadPaymentsExcel={handleRazorpayPaymentsExcel}
+                onDownloadRefundsExcel={handleRazorpayRefundsExcel}
                 onDownloadCSV={handleRazorpayCSV}
               />
             )}

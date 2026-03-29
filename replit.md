@@ -32,12 +32,29 @@ A monorepo email viewing application. Users pick a streaming service from a card
 - `npm start` → runs `node api/index.js` (serves API + built frontend)
 - `npm run build` → builds frontend via `cd frontend && npm run build`
 
+## Gift Scanner (`/giftscanner`)
+Password-protected tool for scanning and exporting Gmail emails. Modes:
+- **Generic Gift Cards** — extracts brand/code/value from any sender, exports to Excel
+- **Razorpay** (`no-reply@razorpay.com`) — parses payment & refund emails:
+  - Separate "Successful Payments (.xlsx)" and "Refunds (.xlsx)" export buttons
+  - Refunds Excel: Sheet 1 = completed refunds (same refundId in 2 emails), Sheet 2 = pending (1 email only)
+- **JioGames** (`orders@jiogames.com`) — collects order PDFs, exports details to Excel
+- **GamesTheShop** (`no-reply@gamestheshop.com`) — lists all PDF attachments from emails for individual download
+
+### Gift Scanner Backend Endpoints
+- `POST /api/verify-password` — authenticates with SUDO_PASSWORD env var
+- `POST /api/gift-scan` — generic gift card extraction
+- `POST /api/razorpay-scan` — payment + refund extraction with deduplication
+- `POST /api/jiogames-scan` — JioGames order PDFs
+- `POST /api/gamestheshop-scan` — GamesTheShop PDF attachments
+
 ## Key Files
-- `api/index.js` — ALL backend logic (MongoDB, Gmail, SSE, CORS, rate limiting)
+- `api/index.js` — ALL backend logic (MongoDB, Gmail, SSE, CORS, rate limiting, gift scanner)
 - `frontend/src/context/ServicesContext.tsx` — Services state, SSE, retry logic
 - `frontend/src/pages/Cards.tsx` — Homepage with skeleton loader
 - `frontend/src/pages/Admin.tsx` — Admin panel (credentials: devil / daKsh@3210)
 - `frontend/src/pages/EmailDashboard.tsx` — Email list + viewer
+- `frontend/src/pages/GiftScanner.tsx` — Gift/Razorpay/JioGames/GamesTheShop scanner UI
 - `frontend/vite.config.ts` — Vite dev proxy config
 - `Dockerfile` — Production Docker build for Digital Ocean
 - `AGENT_CONTEXT.md` — Detailed agent handoff document (read this for full context)
